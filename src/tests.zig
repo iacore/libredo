@@ -5,68 +5,155 @@ test "type check" {
     std.testing.refAllDeclsRecursive(signals);
 }
 
-// const What = [4]*signals.Header(f64);
+const Scope = signals.DependencyTracker;
 
-// const Context = struct {
-//     m: What,
-// };
+fn get(cx: *Scope, id: u64) void {
+    // std.log.warn("get({})", .{id});
+    cx.used(id);
+    if (id >= 4 and cx.setDirty(id, false)) {
+        cx.begin(id);
+        defer cx.end();
+        const base = id - id % 4 - 4;
+        switch (id % 4) {
+            0 => {
+                get(cx, base + 1);
+            },
+            1 => {
+                get(cx, base + 0);
+                get(cx, base + 2);
+            },
+            2 => {
+                get(cx, base + 1);
+                get(cx, base + 3);
+            },
+            3 => {
+                get(cx, base + 2);
+            },
+            else => unreachable,
+        }
+    }
+}
 
-// fn run(layer_count: usize) ![4]f64 {
-//     var cx = try signals.createScope(std.testing.allocator);
-//     defer cx.deinit();
+/// returns ns elapsed
+fn run(layer_count: usize, comptime check: bool) !u64 {
+    var opts = Scope.InitOptions{};
+    opts.dependency_pairs_capacity *= @max(1, layer_count / 100);
+    opts.dependent_stack_capacity *= @max(1, layer_count / 100);
+    opts.dirty_set_capacity *= @max(1, @as(u32, @intCast(layer_count / 100)));
+    var cx = try Scope.init(std.testing.allocator, opts);
+    defer cx.deinit();
 
-//     var a = cx.createSignal(f64, 1);
-//     var b = cx.createSignal(f64, 2);
-//     var c = cx.createSignal(f64, 3);
-//     var d = cx.createSignal(f64, 4);
+    const base_id = (layer_count - 1) * 4;
 
-//     var layer: What = .{ &a.header, &b.header, &c.header, &d.header };
+    var timer = try std.time.Timer.start();
 
-//     const S = struct {
-//         pub fn fn_a(this: *Context) f64 {
-//             return this.m[1].get();
-//         }
-//         pub fn fn_b(this: *Context) f64 {
-//             return this.m[0].get() - this.m[2].get();
-//         }
-//         pub fn fn_c(this: *Context) f64 {
-//             return this.m[1].get() + this.m[3].get();
-//         }
-//         pub fn fn_d(this: *Context) f64 {
-//             return this.m[2].get();
-//         }
-//     };
+    for (0..layer_count * 4) |i| {
+        _ = cx.setDirty(i, true);
+    }
 
-//     for (0..layer_count) |_| {
-//         layer = .{
-//             cx.createMemo(f64, Context{ .m = layer }, S.fn_a),
-//             cx.createMemo(f64, Context{ .m = layer }, S.fn_b),
-//             cx.createMemo(f64, Context{ .m = layer }, S.fn_c),
-//             cx.createMemo(f64, Context{ .m = layer }, S.fn_d),
-//         };
-//     }
+    const ns_prepare = timer.lap();
 
-//     var timer = try std.time.Timer.start();
+    get(&cx, base_id + 0);
+    get(&cx, base_id + 1);
+    get(&cx, base_id + 2);
+    get(&cx, base_id + 3);
 
-//     cx.tick();
-//     a.set(4);
-//     b.set(3);
-//     c.set(2);
-//     d.set(1);
+    if (check) for (0..layer_count * 4) |i| {
+        try std.testing.expect(!cx.isDirty(i));
+    };
 
-//     const end = layer;
-//     const solution = [4]f64{ end[0].get(), end[1].get(), end[2].get(), end[3].get() };
+    const ns0 = timer.lap();
 
-//     const ns = timer.read();
-//     std.log.warn("time used: {}ns", .{ns});
+    get(&cx, base_id + 0);
+    get(&cx, base_id + 1);
+    get(&cx, base_id + 2);
+    get(&cx, base_id + 3);
 
-//     return solution;
-// }
+    if (check) for (0..layer_count * 4) |i| {
+        try std.testing.expect(!cx.isDirty(i));
+    };
 
-// test "100 layers" {
-//     const ans = try run(100);
-//     try std.testing.expectEqual([4]f64{ -2, -4, 2, 3 }, ans);
-// }
+    const ns1 = timer.lap();
+
+    cx.invalidate(0);
+    cx.invalidate(1);
+    cx.invalidate(2);
+    cx.invalidate(3);
+
+    if (check) {
+        {
+            var it = cx.dirty_map.iterator();
+            while (it.next()) |kv| {
+                std.log.warn("dirty: {}", .{kv.key_ptr.*});
+            }
+        }
+        {
+            for (cx.pairs.items) |kv| {
+                std.log.warn("dep: {} -> {}", .{ kv[0], kv[1] });
+            }
+        }
+
+        for (0..4) |i| {
+            try std.testing.expect(!cx.isDirty(i));
+        }
+        for (4..layer_count * 4) |i| {
+            try std.testing.expect(cx.isDirty(i));
+        }
+    }
+
+    const ns2 = timer.lap();
+
+    get(&cx, base_id + 0);
+    get(&cx, base_id + 1);
+    get(&cx, base_id + 2);
+    get(&cx, base_id + 3);
+
+    if (check) for (0..layer_count * 4) |i| {
+        try std.testing.expect(!cx.isDirty(i));
+    };
+
+    const ns3 = timer.lap();
+
+    get(&cx, base_id + 0);
+    get(&cx, base_id + 1);
+    get(&cx, base_id + 2);
+    get(&cx, base_id + 3);
+
+    if (check) for (0..layer_count * 4) |i| {
+        try std.testing.expect(!cx.isDirty(i));
+    };
+
+    const ns4 = timer.lap();
+
+    // std.log.warn("time used: {any}", .{[_]u64{ ns_start, ns0, ns1, ns2, ns3, ns4 }});
+
+    return ns_prepare + ns0 + ns1 + ns2 + ns3 + ns4;
+}
+
+const RUNS_PER_TIER = 150;
+const LAYER_TIERS = [_]usize{
+    10,
+    100,
+    500,
+    1000,
+    2000,
+};
+
+test "bench" {
+    for (LAYER_TIERS) |n_layers| {
+        var sum: u64 = 0;
+        for (0..RUNS_PER_TIER) |_| {
+            sum += try run(n_layers, false);
+        }
+        const ns: f64 = @floatFromInt(sum / RUNS_PER_TIER);
+        const ms = ns / std.time.ns_per_ms;
+        std.log.warn("n_layers={} avg {d}ms", .{ n_layers, ms });
+    }
+}
+
+test "sanity check" {
+    try run(2, true);
+}
 
 // const SOLUTIONS = {
 //   10: [2, 4, -2, -3],

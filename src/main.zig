@@ -5,36 +5,43 @@ pub const SignalId = u64;
 pub const DependencyTracker = struct {
     /// .{dependent, dependency}
     pub const KeyValuePair = std.meta.Tuple(&.{ SignalId, SignalId });
+    pub const InitOptions = struct {
+        dependent_stack_capacity: usize = 256,
+        dependency_pairs_capacity: usize = 4096,
+        dirty_set_capacity: u32 = 4096,
+    };
 
     tracked: std.ArrayList(SignalId),
     pairs: std.ArrayList(KeyValuePair),
-    dirty: std.AutoHashMap(SignalId, void),
+    dirty_set: std.AutoHashMap(SignalId, void),
 
-    pub fn init(a: std.mem.Allocator) !@This() {
+    pub fn init(a: std.mem.Allocator, opts: InitOptions) !@This() {
+        var dirty_set = std.AutoHashMap(SignalId, void).init(a);
+        try dirty_set.ensureTotalCapacity(opts.dirty_set_capacity);
         return .{
-            .tracked = try std.ArrayList(SignalId).initCapacity(a, 256), // todo: better memory management
-            .pairs = try std.ArrayList(KeyValuePair).initCapacity(a, 4096), // todo: better memory management
-            .dirty = std.AutoHashMap(SignalId, void).init(a),
+            .tracked = try std.ArrayList(SignalId).initCapacity(a, opts.dependent_stack_capacity),
+            .pairs = try std.ArrayList(KeyValuePair).initCapacity(a, opts.dependency_pairs_capacity),
+            .dirty_set = dirty_set,
         };
     }
     pub fn deinit(this: @This()) void {
         this.tracked.deinit();
         this.pairs.deinit();
-        var dict = this.dirty;
+        var dict = this.dirty_set;
         dict.deinit();
     }
 
-    // pub fn isDirty(this: @This(), dependency: SignalId) bool {
-    //     return this.dirty.contains(dependency);
-    // }
+    pub fn isDirty(this: @This(), dependency: SignalId) bool {
+        return this.dirty_set.contains(dependency);
+    }
 
     /// returns previous state
     pub fn setDirty(this: *@This(), dependency: SignalId, value: bool) bool {
         if (value) {
-            const res = this.dirty.getOrPutAssumeCapacity(dependency);
+            const res = this.dirty_set.getOrPutAssumeCapacity(dependency);
             return res.found_existing;
         } else {
-            return this.dirty.remove(dependency);
+            return this.dirty_set.remove(dependency);
         }
     }
 
@@ -48,9 +55,10 @@ pub const DependencyTracker = struct {
     }
 
     /// mark that`dependency` is used
-    pub fn track(this: *@This(), dependency: SignalId) void {
-        if (this.tracked.getLastOrNull()) |memo| {
-            this.pairs.appendAssumeCapacity(.{ memo, dependency });
+    pub fn used(this: *@This(), dependency: SignalId) void {
+        if (this.tracked.getLastOrNull()) |dependent| {
+            // std.log.debug("hit! {} -> {}", .{ dependent, dependency });
+            this.pairs.appendAssumeCapacity(.{ dependent, dependency });
         }
     }
 
