@@ -2,26 +2,58 @@ const std = @import("std");
 
 pub const SignalId = u64;
 
+/// Special two-way map
+///
+/// used as BijectMap(dependent, dependency)
+pub fn BijectMap(comptime K: type, comptime V: type) type {
+    return struct {
+        pub const Iterator = struct {
+            pub fn next(this: *@This()) ?K {
+                _ = this;
+                return undefined;
+            }
+        };
+
+        pub fn init(a: std.mem.Allocator) @This() {
+            _ = a;
+            return .{};
+        }
+        pub fn deinit(this: @This()) void {
+            _ = this;
+        }
+
+        pub fn clearValues(this: *@This(), key: K) void {
+            _ = key;
+            _ = this;
+        }
+        pub fn add(this: *@This(), key: K, value: V) !void {
+            _ = value;
+            _ = key;
+            _ = this;
+        }
+        /// iterate keys that has value
+        pub fn iteratorByValue(this: *const @This(), value: V) Iterator {
+            _ = value;
+            _ = this;
+            return .{};
+        }
+    };
+}
+
 pub const DependencyTracker = struct {
     /// .{dependent, dependency}
     pub const KeyValuePair = std.meta.Tuple(&.{ SignalId, SignalId });
-    pub const InitOptions = struct {
-        dependent_stack_capacity: usize = 256,
-        dependency_pairs_capacity: usize = 4096,
-        dirty_set_capacity: u32 = 4096,
-    };
 
     tracked: std.ArrayList(SignalId),
-    pairs: std.ArrayList(KeyValuePair),
+    pairs: BijectMap(SignalId, SignalId),
     dirty_set: std.AutoHashMap(SignalId, void),
 
-    pub fn init(a: std.mem.Allocator, opts: InitOptions) !@This() {
-        var dirty_set = std.AutoHashMap(SignalId, void).init(a);
-        try dirty_set.ensureTotalCapacity(opts.dirty_set_capacity);
+    pub fn init(a: std.mem.Allocator) !@This() {
+        const _p: @This() = undefined;
         return .{
-            .tracked = try std.ArrayList(SignalId).initCapacity(a, opts.dependent_stack_capacity),
-            .pairs = try std.ArrayList(KeyValuePair).initCapacity(a, opts.dependency_pairs_capacity),
-            .dirty_set = dirty_set,
+            .tracked = @TypeOf(_p.tracked).init(a),
+            .pairs = @TypeOf(_p.pairs).init(a),
+            .dirty_set = @TypeOf(_p.dirty_set).init(a),
         };
     }
     pub fn deinit(this: @This()) void {
@@ -36,45 +68,46 @@ pub const DependencyTracker = struct {
     }
 
     /// returns previous state
-    pub fn setDirty(this: *@This(), dependency: SignalId, value: bool) bool {
+    pub fn setDirty(this: *@This(), dependency: SignalId, value: bool) !bool {
         if (value) {
-            const res = this.dirty_set.getOrPutAssumeCapacity(dependency);
+            const res = try this.dirty_set.getOrPut(dependency);
             return res.found_existing;
         } else {
             return this.dirty_set.remove(dependency);
         }
     }
 
+    pub fn unregister(this: *@This(), signal: SignalId) void {
+        this.pairs.clearValues(signal);
+        // todo: check if any dependent of `signal` is still registered, and warn
+    }
+    pub fn register(this: *@This(), signal: SignalId) !void {
+        const res = try this.setDirty(signal, true);
+        if (res) std.debug.panic("Signal already registered: {}", .{signal});
+    }
+
     /// mark that `dependency` has changed
-    pub fn invalidate(this: *@This(), dependency: SignalId) void {
-        for (this.pairs.items) |pair| {
-            if (pair[1] == dependency and !this.setDirty(pair[0], true)) {
-                this.invalidate(pair[0]);
+    pub fn invalidate(this: *@This(), dependency: SignalId) !void {
+        var it = this.pairs.iteratorByValue(dependency);
+        while (it.next()) |dependent| {
+            if (!try this.setDirty(dependent, true)) {
+                try this.invalidate(dependent);
             }
         }
     }
 
     /// mark that`dependency` is used
-    pub fn used(this: *@This(), dependency: SignalId) void {
+    pub fn used(this: *@This(), dependency: SignalId) !void {
         if (this.tracked.getLastOrNull()) |dependent| {
-            // std.log.debug("hit! {} -> {}", .{ dependent, dependency });
-            this.pairs.appendAssumeCapacity(.{ dependent, dependency });
+            try this.pairs.add(dependent, dependency);
         }
     }
 
     /// start tracking dependencies
-    pub fn begin(this: *@This(), dependent: SignalId) void {
-        // clear previous dependencies
-        var i: usize = 0;
-        while (i < this.pairs.items.len) {
-            if (this.pairs.items[i][0] == dependent) {
-                _ = this.pairs.swapRemove(i);
-            } else {
-                i += 1;
-            }
-        }
+    pub fn begin(this: *@This(), dependent: SignalId) !void {
+        this.pairs.clearValues(dependent);
 
-        this.tracked.appendAssumeCapacity(dependent);
+        try this.tracked.append(dependent);
     }
 
     /// stop tracking dependencies

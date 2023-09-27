@@ -10,27 +10,27 @@ test "type check" {
 
 const Scope = signals.DependencyTracker;
 
-fn get(cx: *Scope, id: u64) void {
+fn get(cx: *Scope, id: u64) !void {
     // std.log.warn("get({})", .{id});
-    cx.used(id);
-    if (id >= 4 and cx.setDirty(id, false)) {
-        cx.begin(id);
+    try cx.used(id);
+    if (id >= 4 and (try cx.setDirty(id, false))) {
+        try cx.begin(id);
         defer cx.end();
         const base = id - id % 4 - 4;
         switch (id % 4) {
             0 => {
-                get(cx, base + 1);
+                try get(cx, base + 1);
             },
             1 => {
-                get(cx, base + 0);
-                get(cx, base + 2);
+                try get(cx, base + 0);
+                try get(cx, base + 2);
             },
             2 => {
-                get(cx, base + 1);
-                get(cx, base + 3);
+                try get(cx, base + 1);
+                try get(cx, base + 3);
             },
             3 => {
-                get(cx, base + 2);
+                try get(cx, base + 2);
             },
             else => unreachable,
         }
@@ -39,11 +39,11 @@ fn get(cx: *Scope, id: u64) void {
 
 /// returns ns elapsed
 fn run(a: std.mem.Allocator, layer_count: usize, comptime check: bool) !u64 {
-    var opts = Scope.InitOptions{};
-    opts.dependency_pairs_capacity *= @max(1, layer_count / 100);
-    opts.dependent_stack_capacity *= @max(1, layer_count / 100);
-    opts.dirty_set_capacity *= @max(1, @as(u32, @intCast(layer_count / 100)));
-    var cx = try Scope.init(a, opts);
+    // var opts = Scope.InitOptions{};
+    // opts.dependency_pairs_capacity *= @max(1, layer_count / 100);
+    // opts.dependent_stack_capacity *= @max(1, layer_count / 100);
+    // opts.dirty_set_capacity *= @max(1, @as(u32, @intCast(layer_count / 100)));
+    var cx = try Scope.init(a);
     defer cx.deinit();
 
     const base_id = (layer_count - 1) * 4;
@@ -57,15 +57,20 @@ fn run(a: std.mem.Allocator, layer_count: usize, comptime check: bool) !u64 {
 
     // register signals (by default is dirty)
     for (0..layer_count * 4) |i| {
-        _ = cx.setDirty(i, true);
+        try cx.register(i);
+    }
+    defer {
+        for (0..layer_count * 4) |i| {
+            cx.unregister(i);
+        }
     }
 
     const ns_prepare = timer.lap();
 
-    get(&cx, base_id + 0);
-    get(&cx, base_id + 1);
-    get(&cx, base_id + 2);
-    get(&cx, base_id + 3);
+    try get(&cx, base_id + 0);
+    try get(&cx, base_id + 1);
+    try get(&cx, base_id + 2);
+    try get(&cx, base_id + 3);
 
     if (check) for (4..layer_count * 4) |i| {
         try std.testing.expect(!cx.isDirty(i));
@@ -73,10 +78,10 @@ fn run(a: std.mem.Allocator, layer_count: usize, comptime check: bool) !u64 {
 
     const ns0 = timer.lap();
 
-    get(&cx, base_id + 0);
-    get(&cx, base_id + 1);
-    get(&cx, base_id + 2);
-    get(&cx, base_id + 3);
+    try get(&cx, base_id + 0);
+    try get(&cx, base_id + 1);
+    try get(&cx, base_id + 2);
+    try get(&cx, base_id + 3);
 
     if (check) for (4..layer_count * 4) |i| {
         try std.testing.expect(!cx.isDirty(i));
@@ -84,10 +89,10 @@ fn run(a: std.mem.Allocator, layer_count: usize, comptime check: bool) !u64 {
 
     const ns1 = timer.lap();
 
-    cx.invalidate(0);
-    cx.invalidate(1);
-    cx.invalidate(2);
-    cx.invalidate(3);
+    try cx.invalidate(0);
+    try cx.invalidate(1);
+    try cx.invalidate(2);
+    try cx.invalidate(3);
 
     if (check) {
         {
@@ -109,10 +114,10 @@ fn run(a: std.mem.Allocator, layer_count: usize, comptime check: bool) !u64 {
 
     const ns2 = timer.lap();
 
-    get(&cx, base_id + 0);
-    get(&cx, base_id + 1);
-    get(&cx, base_id + 2);
-    get(&cx, base_id + 3);
+    try get(&cx, base_id + 0);
+    try get(&cx, base_id + 1);
+    try get(&cx, base_id + 2);
+    try get(&cx, base_id + 3);
 
     if (check) for (4..layer_count * 4) |i| {
         try std.testing.expect(!cx.isDirty(i));
@@ -120,10 +125,10 @@ fn run(a: std.mem.Allocator, layer_count: usize, comptime check: bool) !u64 {
 
     const ns3 = timer.lap();
 
-    get(&cx, base_id + 0);
-    get(&cx, base_id + 1);
-    get(&cx, base_id + 2);
-    get(&cx, base_id + 3);
+    try get(&cx, base_id + 0);
+    try get(&cx, base_id + 1);
+    try get(&cx, base_id + 2);
+    try get(&cx, base_id + 3);
 
     if (check) for (4..layer_count * 4) |i| {
         try std.testing.expect(!cx.isDirty(i));
