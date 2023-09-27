@@ -25,6 +25,7 @@ pub fn BijectMap(comptime K: type, comptime V: type) type {
             _ = this;
         }
         pub fn clearValues(this: *@This(), key: K, opts: ClearOptions) void {
+            // idea: cache lookup, so `add` can be used later
             _ = opts;
             _ = key;
             _ = this;
