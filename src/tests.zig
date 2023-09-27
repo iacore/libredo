@@ -38,8 +38,7 @@ fn get(cx: *Scope, id: u64) void {
 }
 
 /// returns ns elapsed
-fn run(layer_count: usize, comptime check: bool) !u64 {
-    const a = std.testing.allocator;
+fn run(a: std.mem.Allocator, layer_count: usize, comptime check: bool) !u64 {
     var opts = Scope.InitOptions{};
     opts.dependency_pairs_capacity *= @max(1, layer_count / 100);
     opts.dependent_stack_capacity *= @max(1, layer_count / 100);
@@ -146,20 +145,25 @@ const LAYER_TIERS = [_]usize{
     2000,
 };
 
-test "bench" {
-    for (LAYER_TIERS) |n_layers| {
-        var sum: u64 = 0;
-        for (0..RUNS_PER_TIER) |_| {
-            sum += try run(n_layers, false);
-        }
-        const ns: f64 = @floatFromInt(sum / RUNS_PER_TIER);
-        const ms = ns / std.time.ns_per_ms;
-        std.log.warn("n_layers={} avg {d}ms", .{ n_layers, ms });
+pub fn main() !void {
+    // // bench
+    // for (LAYER_TIERS) |n_layers| {
+    //     var sum: u64 = 0;
+    //     for (0..RUNS_PER_TIER) |_| {
+    //         sum += try run(std.testing.allocator,n_layers, false);
+    //     }
+    //     const ns: f64 = @floatFromInt(sum / RUNS_PER_TIER);
+    //     const ms = ns / std.time.ns_per_ms;
+    //     std.log.warn("n_layers={} avg {d}ms", .{ n_layers, ms });
+    // }
+
+    while (true) {
+        _ = try run(std.heap.c_allocator, 500, false);
     }
 }
 
 test "sanity check" {
-    _ = try run(2, true);
+    _ = try run(std.testing.allocator, 2, true);
 }
 
 // const SOLUTIONS = {
