@@ -38,7 +38,7 @@ fn get(cx: *Scope, id: u64) !void {
 }
 
 /// returns ns elapsed
-fn run(a: std.mem.Allocator, layer_count: usize, comptime check: bool) !u64 {
+fn run(a: std.mem.Allocator, layer_count: usize, comptime check: bool, comptime coz: bool) !u64 {
     // var opts = Scope.InitOptions{};
     // opts.dependency_pairs_capacity *= @max(1, layer_count / 100);
     // opts.dependent_stack_capacity *= @max(1, layer_count / 100);
@@ -50,20 +50,25 @@ fn run(a: std.mem.Allocator, layer_count: usize, comptime check: bool) !u64 {
 
     const checkpoint_name = try std.fmt.allocPrintZ(a, "n={}", .{layer_count});
     defer a.free(checkpoint_name);
-    coz_begin(checkpoint_name);
-    defer coz_end(checkpoint_name);
+    if (coz) coz_begin(checkpoint_name);
+    defer if (coz) coz_end(checkpoint_name);
 
     var timer = try std.time.Timer.start();
 
-    // register signals (by default is dirty)
-    for (0..layer_count * 4) |i| {
+    // register memos (by default is dirty)
+    for (4..layer_count * 4) |i| {
         try cx.register(i);
     }
-    defer {
-        for (0..layer_count * 4) |i| {
-            cx.unregister(i);
-        }
-    }
+    // defer {
+    //     for (0..layer_count * 4) |i| {
+    //         cx.unregister(i);
+    //     }
+    // }
+
+    if (check) for (4..layer_count * 4) |i| {
+        // cx.pairs.dumpLog();
+        try std.testing.expect(cx.isDirty(i));
+    };
 
     const ns_prepare = timer.lap();
 
@@ -73,6 +78,7 @@ fn run(a: std.mem.Allocator, layer_count: usize, comptime check: bool) !u64 {
     try get(&cx, base_id + 3);
 
     if (check) for (4..layer_count * 4) |i| {
+        // cx.pairs.dumpLog();
         try std.testing.expect(!cx.isDirty(i));
     };
 
@@ -84,6 +90,7 @@ fn run(a: std.mem.Allocator, layer_count: usize, comptime check: bool) !u64 {
     try get(&cx, base_id + 3);
 
     if (check) for (4..layer_count * 4) |i| {
+        // cx.pairs.dumpLog();
         try std.testing.expect(!cx.isDirty(i));
     };
 
@@ -95,17 +102,18 @@ fn run(a: std.mem.Allocator, layer_count: usize, comptime check: bool) !u64 {
     try cx.invalidate(3);
 
     if (check) {
+        // cx.pairs.dumpLog();
         {
             var it = cx.dirty_set.iterator();
             while (it.next()) |kv| {
                 std.log.warn("dirty: {}", .{kv.key_ptr.*});
             }
         }
-        {
-            for (cx.pairs.items) |kv| {
-                std.log.warn("dep: {} -> {}", .{ kv[0], kv[1] });
-            }
-        }
+        // {
+        //     for (cx.pairs.items) |kv| {
+        //         std.log.warn("dep: {} -> {}", .{ kv[0], kv[1] });
+        //     }
+        // }
 
         for (4..layer_count * 4) |i| {
             try std.testing.expect(cx.isDirty(i));
@@ -115,8 +123,15 @@ fn run(a: std.mem.Allocator, layer_count: usize, comptime check: bool) !u64 {
     const ns2 = timer.lap();
 
     try get(&cx, base_id + 0);
+    // std.log.warn("after base_id+0", .{});
+    // cx.pairs.dumpLog();
+
     try get(&cx, base_id + 1);
+    // std.log.warn("after base_id+1", .{});
+    // cx.pairs.dumpLog();
     try get(&cx, base_id + 2);
+    // cx.pairs.dumpLog();
+    // unreachable;
     try get(&cx, base_id + 3);
 
     if (check) for (4..layer_count * 4) |i| {
@@ -141,41 +156,42 @@ fn run(a: std.mem.Allocator, layer_count: usize, comptime check: bool) !u64 {
     return ns_prepare + ns0 + ns1 + ns2 + ns3 + ns4;
 }
 
-const RUNS_PER_TIER = 150;
-const LAYER_TIERS = [_]usize{
-    10,
-    100,
-    500,
-    1000,
-    2000,
-};
-
 pub fn main() !void {
-    // // bench
-    // for (LAYER_TIERS) |n_layers| {
-    //     var sum: u64 = 0;
-    //     for (0..RUNS_PER_TIER) |_| {
-    //         sum += try run(std.testing.allocator,n_layers, false);
-    //     }
-    //     const ns: f64 = @floatFromInt(sum / RUNS_PER_TIER);
-    //     const ms = ns / std.time.ns_per_ms;
-    //     std.log.warn("n_layers={} avg {d}ms", .{ n_layers, ms });
-    // }
-
     while (true) {
-        _ = try run(std.heap.c_allocator, 500, false);
+        _ = try run(std.heap.c_allocator, 500, false, true);
     }
 }
 
 test "sanity check" {
-    _ = try run(std.testing.allocator, 2, true);
+    _ = try run(std.testing.allocator, 2, true, false);
 }
 
-// const SOLUTIONS = {
-//   10: [2, 4, -2, -3],
-//   100: [-2, -4, 2, 3],
-//   500: [-2, 1, -4, -4],
-//   1000: [-2, -4, 2, 3],
-//   2000: [-2, 1, -4, -4],
-//   // 2500: [-2, -4, 2, 3],
-// };
+test "bench" {
+    const RUNS_PER_TIER = 150;
+    const LAYER_TIERS = [_]usize{
+        10,
+        100,
+        500,
+        1000,
+        2000,
+    };
+    // const SOLUTIONS = {
+    //   10: [2, 4, -2, -3],
+    //   100: [-2, -4, 2, 3],
+    //   500: [-2, 1, -4, -4],
+    //   1000: [-2, -4, 2, 3],
+    //   2000: [-2, 1, -4, -4],
+    //   // 2500: [-2, -4, 2, 3],
+    // };
+    const stderr = std.io.getStdErr().writer();
+    for (LAYER_TIERS) |n_layers| {
+        var sum: u64 = 0;
+        for (0..RUNS_PER_TIER) |_| {
+            sum += try run(std.testing.allocator, n_layers, false, false);
+        }
+        const ns: f64 = @floatFromInt(sum / RUNS_PER_TIER);
+        const ms = ns / std.time.ns_per_ms;
+
+        try stderr.print("n_layers={} avg {d}ms\n", .{ n_layers, ms });
+    }
+}

@@ -1,4 +1,6 @@
 const std = @import("std");
+const FieldType = std.meta.FieldType;
+const assert = std.debug.assert;
 
 pub const SignalId = u64;
 
@@ -7,35 +9,121 @@ pub const SignalId = u64;
 /// used as BijectMap(dependent, dependency)
 pub fn BijectMap(comptime K: type, comptime V: type) type {
     return struct {
-        pub const Iterator = struct {
-            pub fn next(this: *@This()) ?K {
-                _ = this;
-                return undefined;
-            }
-        };
+        a: std.mem.Allocator,
+        k2v: std.AutoHashMap(K, std.AutoHashMap(V, void)),
+        v2k: std.AutoHashMap(V, std.AutoHashMap(K, void)),
+
+        pub const Iterator = std.AutoHashMap(K, void).KeyIterator;
 
         pub fn init(a: std.mem.Allocator) @This() {
-            _ = a;
-            return .{};
+            return .{
+                .a = a,
+                .k2v = FieldType(@This(), .k2v).init(a),
+                .v2k = FieldType(@This(), .v2k).init(a),
+            };
         }
         pub fn deinit(this: @This()) void {
-            _ = this;
+            var _this = this;
+            {
+                var it = _this.k2v.valueIterator();
+                while (it.next()) |arr| arr.deinit();
+                _this.k2v.deinit();
+            }
+            {
+                var it = _this.v2k.valueIterator();
+                while (it.next()) |arr| arr.deinit();
+                _this.v2k.deinit();
+            }
         }
 
-        pub fn clearValues(this: *@This(), key: K) void {
-            _ = key;
-            _ = this;
+        pub const ClearOptions = struct {
+            retain_memory: bool = true,
+        };
+        pub fn clearValues(this: *@This(), key: K, opts: ClearOptions) void {
+            @setRuntimeSafety(false);
+            // std.log.warn("clearValues({}) before", .{key});
+            // this.dumpLog();
+            // defer {
+            //     std.log.warn("clearValues({}) after", .{key});
+            //     this.dumpLog();
+            // }
+
+            const entry = this.k2v.getEntry(key) orelse return;
+            const values_map = entry.value_ptr;
+            defer {
+                if (opts.retain_memory) {
+                    values_map.clearRetainingCapacity();
+                } else {
+                    this.k2v.removeByPtr(entry.key_ptr);
+                    values_map.deinit();
+                }
+            }
+            var it = values_map.keyIterator();
+            while (it.next()) |value| {
+                const entry_set = this.v2k.getEntry(value.*) orelse unreachable;
+                const set = entry_set.value_ptr;
+                defer {
+                    if (set.count() == 0) {
+                        if (opts.retain_memory) {
+                            set.clearRetainingCapacity();
+                        } else {
+                            set.deinit();
+                            this.v2k.removeByPtr(entry_set.key_ptr);
+                        }
+                    }
+                }
+                const remove_ok = set.remove(key);
+                if (!remove_ok) unreachable;
+            }
         }
         pub fn add(this: *@This(), key: K, value: V) !void {
-            _ = value;
-            _ = key;
-            _ = this;
+            {
+                const entry = try this.k2v.getOrPut(key);
+                if (!entry.found_existing) {
+                    entry.value_ptr.* = @TypeOf(entry.value_ptr.*).init(this.a);
+                }
+                try entry.value_ptr.put(value, void{});
+            }
+            {
+                const entry = try this.v2k.getOrPut(value);
+                if (!entry.found_existing) {
+                    entry.value_ptr.* = @TypeOf(entry.value_ptr.*).init(this.a);
+                }
+                try entry.value_ptr.put(key, void{});
+            }
         }
         /// iterate keys that has value
-        pub fn iteratorByValue(this: *const @This(), value: V) Iterator {
-            _ = value;
-            _ = this;
-            return .{};
+        pub fn iteratorByValue(this: *const @This(), value: V) ?Iterator {
+            const keys = this.v2k.get(value) orelse return null;
+            return keys.keyIterator();
+        }
+        pub fn dumpLog(this: @This()) void {
+            {
+                std.log.warn("k2v:", .{});
+                var it = this.k2v.iterator();
+                while (it.next()) |entry| {
+                    const key = entry.key_ptr.*;
+
+                    var it1 = entry.value_ptr.*.iterator();
+                    while (it1.next()) |entry1| {
+                        const value = entry1.key_ptr.*;
+                        std.log.warn("{} -> {}", .{ key, value });
+                    }
+                }
+            }
+            {
+                std.log.warn("v2k:", .{});
+                var it = this.v2k.iterator();
+                while (it.next()) |entry| {
+                    const key = entry.key_ptr.*;
+
+                    var it1 = entry.value_ptr.*.iterator();
+                    while (it1.next()) |entry1| {
+                        const value = entry1.key_ptr.*;
+                        std.log.warn("{} -> {}", .{ key, value });
+                    }
+                }
+            }
         }
     };
 }
@@ -49,11 +137,10 @@ pub const DependencyTracker = struct {
     dirty_set: std.AutoHashMap(SignalId, void),
 
     pub fn init(a: std.mem.Allocator) !@This() {
-        const _p: @This() = undefined;
         return .{
-            .tracked = @TypeOf(_p.tracked).init(a),
-            .pairs = @TypeOf(_p.pairs).init(a),
-            .dirty_set = @TypeOf(_p.dirty_set).init(a),
+            .tracked = FieldType(@This(), .tracked).init(a),
+            .pairs = FieldType(@This(), .pairs).init(a),
+            .dirty_set = FieldType(@This(), .dirty_set).init(a),
         };
     }
     pub fn deinit(this: @This()) void {
@@ -78,9 +165,10 @@ pub const DependencyTracker = struct {
     }
 
     pub fn unregister(this: *@This(), signal: SignalId) void {
-        this.pairs.clearValues(signal);
+        this.pairs.clearValues(signal, .{ .retain_memory = false });
         // todo: check if any dependent of `signal` is still registered, and warn
     }
+    // only memos need to be registered
     pub fn register(this: *@This(), signal: SignalId) !void {
         const res = try this.setDirty(signal, true);
         if (res) std.debug.panic("Signal already registered: {}", .{signal});
@@ -88,10 +176,12 @@ pub const DependencyTracker = struct {
 
     /// mark that `dependency` has changed
     pub fn invalidate(this: *@This(), dependency: SignalId) !void {
-        var it = this.pairs.iteratorByValue(dependency);
+        // std.log.warn("invalidate({})", .{dependency});
+        var it = this.pairs.iteratorByValue(dependency) orelse return;
         while (it.next()) |dependent| {
-            if (!try this.setDirty(dependent, true)) {
-                try this.invalidate(dependent);
+            // std.log.warn("dep({})", .{dependent.*});
+            if (!try this.setDirty(dependent.*, true)) {
+                try this.invalidate(dependent.*);
             }
         }
     }
@@ -105,7 +195,7 @@ pub const DependencyTracker = struct {
 
     /// start tracking dependencies
     pub fn begin(this: *@This(), dependent: SignalId) !void {
-        this.pairs.clearValues(dependent);
+        this.pairs.clearValues(dependent, .{});
 
         try this.tracked.append(dependent);
     }
