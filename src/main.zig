@@ -13,7 +13,9 @@ pub fn BijectMap(comptime K: type, comptime V: type) type {
         k2v: std.AutoHashMap(K, std.AutoHashMap(V, void)),
         v2k: std.AutoHashMap(V, std.AutoHashMap(K, void)),
 
-        pub const Iterator = std.AutoHashMap(K, void).KeyIterator;
+        pub const KSet = std.AutoHashMap(K, void);
+        pub const VSet = std.AutoHashMap(V, void);
+        pub const Iterator = KSet.KeyIterator;
 
         pub fn init(a: std.mem.Allocator) @This() {
             return .{
@@ -37,20 +39,30 @@ pub fn BijectMap(comptime K: type, comptime V: type) type {
         }
 
         pub const ClearOptions = struct {
+            ret_vset_ptr: ?**VSet = null,
             retain_memory: bool = true,
             assert_empty: bool = false,
         };
-        pub fn clearValues(this: *@This(), key: K, opts: ClearOptions) void {
-            const entry = this.k2v.getEntry(key) orelse return;
+        pub fn clearValues(this: *@This(), key: K, opts: ClearOptions) !void {
+            const entry = if (opts.retain_memory) (this.k2v.getEntry(key) orelse return) else blk: {
+                const set = try this.k2v.getOrPut(key);
+                if (!set.found_existing) setzig build.value_ptr.* = @TypeOf(set.value_ptr.*).init(this.a);
+                break :blk @TypeOf(this.k2v).Entry{
+                    .key_ptr = set.key_ptr,
+                    .value_ptr = set.value_ptr,
+                };
+            };
             const values_map = entry.value_ptr;
             defer {
                 if (opts.retain_memory) {
                     values_map.clearRetainingCapacity();
                 } else {
+                    assert(opts.ret_vset_ptr == null);
                     this.k2v.removeByPtr(entry.key_ptr);
                     values_map.deinit();
                 }
             }
+            if (opts.ret_vset_ptr) |ret| ret.* = values_map;
 
             if (opts.assert_empty)
                 assert(values_map.count() == 0);
@@ -73,13 +85,9 @@ pub fn BijectMap(comptime K: type, comptime V: type) type {
                 if (!remove_ok) unreachable;
             }
         }
-        pub fn add(this: *@This(), key: K, value: V) !void {
+        pub fn add(this: *@This(), key: K, key_vset: *VSet, value: V) !void {
             {
-                const entry = try this.k2v.getOrPut(key);
-                if (!entry.found_existing) {
-                    entry.value_ptr.* = @TypeOf(entry.value_ptr.*).init(this.a);
-                }
-                try entry.value_ptr.put(value, void{});
+                try key_vset.put(value, void{});
             }
             {
                 const entry = try this.v2k.getOrPut(value);
@@ -126,10 +134,13 @@ pub fn BijectMap(comptime K: type, comptime V: type) type {
 }
 
 pub const DependencyTracker = struct {
-    /// .{dependent, dependency}
-    pub const KeyValuePair = std.meta.Tuple(&.{ SignalId, SignalId });
+    pub const VSet = BijectMap(SignalId, SignalId).VSet;
+    pub const TrackEntry = struct {
+        signal: SignalId,
+        key_vset: *VSet,
+    };
 
-    tracked: std.ArrayList(SignalId),
+    tracked: std.ArrayList(TrackEntry),
     pairs: BijectMap(SignalId, SignalId),
     dirty_set: std.AutoHashMap(SignalId, void),
 
@@ -162,7 +173,7 @@ pub const DependencyTracker = struct {
     }
 
     pub fn unregister(this: *@This(), signal: SignalId) void {
-        this.pairs.clearValues(signal, .{ .retain_memory = false, .assert_empty = true });
+        this.pairs.clearValues(signal, .{ .retain_memory = false, .assert_empty = true }) catch unreachable;
     }
     // only memos need to be registered
     pub fn register(this: *@This(), signal: SignalId) !void {
@@ -183,15 +194,16 @@ pub const DependencyTracker = struct {
     /// mark that`dependency` is used
     pub fn used(this: *@This(), dependency: SignalId) !void {
         if (this.tracked.getLastOrNull()) |dependent| {
-            try this.pairs.add(dependent, dependency);
+            try this.pairs.add(dependent.signal, dependent.key_vset, dependency);
         }
     }
 
     /// start tracking dependencies
     pub fn begin(this: *@This(), dependent: SignalId) !void {
-        this.pairs.clearValues(dependent, .{});
+        var key_vset: *VSet = undefined;
+        try this.pairs.clearValues(dependent, .{ .ret_vset_ptr = &key_vset });
 
-        try this.tracked.append(dependent);
+        try this.tracked.append(.{ .signal = dependent, .key_vset = key_vset });
     }
 
     /// stop tracking dependencies
