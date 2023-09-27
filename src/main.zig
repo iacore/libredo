@@ -1,148 +1,76 @@
 const std = @import("std");
 
-pub const createScope = Scope.init;
-
-pub fn Signal(comptime T: type) type {
-    return struct {
-        // owned
-        header: Header(T),
-
-        // borrowed
-        scope: *Scope,
-
-        // todo: deinit, remove from this.scope.signals
-
-        pub fn get(this: *const @This()) T {
-            this.scope.dependency_tracker.track(this);
-            return this.value;
-        }
-
-        pub fn set(this: *@This(), new_value: T) void {
-            this.value = new_value;
-            this.scope.dependency_tracker.invalidate(this);
-        }
-    };
-}
-
-pub fn Header(comptime T: type) type {
-    return struct {
-        dirty: bool = true,
-        value: T,
-    };
-}
-pub fn Memo(comptime T: type, comptime Context: type) type {
-    return struct {
-        // owned
-        header: Header(T),
-
-        fn_update: *const fn (*Context) T,
-        ctx: Context,
-
-        // borrowed
-        scope: *Scope,
-
-        // todo: deinit, remove from this.scope.memos
-
-        pub fn get(this: *@This()) T {
-            this.scope.dependency_tracker.track(this);
-            if (this.dirty) {
-                defer this.dirty = false;
-                this.scope.dependency_tracker.push(this);
-                defer this.scope.dependency_tracker.pop();
-                this.last_value = this.fn_update(&this.ctx);
-            }
-
-            return this.last_value;
-        }
-    };
-}
-
-const SignalBase = opaque {};
-const MemoBase = struct {
-    memo: *anyopaque,
-    dirty: *bool,
-};
-
-pub const Scope = struct {
-    // all owned
-    a: std.mem.Allocator,
-    dependency_tracker: *DependencyTracker,
-
-    pub fn init(a: std.mem.Allocator) !@This() {
-        const tracker = try a.create(DependencyTracker);
-        tracker.* = try DependencyTracker.init(a);
-        return .{
-            .a = a,
-            .dependency_tracker = tracker,
-        };
-    }
-    pub fn deinit(this: @This()) void {
-        this.dependency_tracker.deinit();
-        this.a.destroy(this.dependency_tracker);
-    }
-    pub fn createSignal(this: *@This(), comptime T: type, initial_value: T) Signal(T) {
-        return .{
-            .scope = this,
-            .value = initial_value,
-        };
-    }
-    pub fn createMemo(this: *@This(), comptime T: type, ctx: anytype, fn_update: anytype) Memo(T) {
-        return .{
-            .dirty = true,
-            .scope = this,
-            .last_value = undefined,
-            .ctx = ctx,
-            .fn_update = fn_update,
-        };
-    }
-};
+pub const SignalId = u64;
 
 pub const DependencyTracker = struct {
-    const KeyValuePair = std.meta.Tuple(&.{ *MemoBase, *const SignalBase });
+    /// .{dependent, dependency}
+    pub const KeyValuePair = std.meta.Tuple(&.{ SignalId, SignalId });
 
-    tracked: std.ArrayList(*MemoBase),
+    tracked: std.ArrayList(SignalId),
     pairs: std.ArrayList(KeyValuePair),
+    dirty: std.AutoHashMap(SignalId, void),
 
     pub fn init(a: std.mem.Allocator) !@This() {
         return .{
-            .tracked = try std.ArrayList(*MemoBase).initCapacity(a, 256), // todo: better memory management
+            .tracked = try std.ArrayList(SignalId).initCapacity(a, 256), // todo: better memory management
             .pairs = try std.ArrayList(KeyValuePair).initCapacity(a, 4096), // todo: better memory management
+            .dirty = std.AutoHashMap(SignalId, void).init(a),
         };
     }
     pub fn deinit(this: @This()) void {
         this.tracked.deinit();
         this.pairs.deinit();
+        var dict = this.dirty;
+        dict.deinit();
     }
 
-    pub fn invalidate(this: *@This(), signal: *const SignalBase) void {
-        for (this.pairs) |pair| {
-            if (pair[1] == signal and !pair[0].dirty.*) {
-                pair[0].dirty.* = true;
-                invalidate(pair[0]);
+    // pub fn isDirty(this: @This(), dependency: SignalId) bool {
+    //     return this.dirty.contains(dependency);
+    // }
+
+    /// returns previous state
+    pub fn setDirty(this: *@This(), dependency: SignalId, value: bool) bool {
+        if (value) {
+            const res = this.dirty.getOrPutAssumeCapacity(dependency);
+            return res.found_existing;
+        } else {
+            return this.dirty.remove(dependency);
+        }
+    }
+
+    /// mark that `dependency` has changed
+    pub fn invalidate(this: *@This(), dependency: SignalId) void {
+        for (this.pairs.items) |pair| {
+            if (pair[1] == dependency and !this.setDirty(pair[0], true)) {
+                this.invalidate(pair[0]);
             }
         }
     }
 
-    pub fn track(this: *@This(), signal: *const SignalBase) void {
+    /// mark that`dependency` is used
+    pub fn track(this: *@This(), dependency: SignalId) void {
         if (this.tracked.getLastOrNull()) |memo| {
-            this.pairs.appendAssumeCapacity(.{ memo, signal });
+            this.pairs.appendAssumeCapacity(.{ memo, dependency });
         }
     }
 
-    pub fn push(this: *@This(), memo: *MemoBase) void {
+    /// start tracking dependencies
+    pub fn begin(this: *@This(), dependent: SignalId) void {
         // clear previous dependencies
         var i: usize = 0;
         while (i < this.pairs.items.len) {
-            if (this.pairs.items[i][0] == memo) {
-                this.pairs.swapRemove(i);
+            if (this.pairs.items[i][0] == dependent) {
+                _ = this.pairs.swapRemove(i);
             } else {
                 i += 1;
             }
         }
 
-        this.tracked.appendAssumeCapacity(memo);
+        this.tracked.appendAssumeCapacity(dependent);
     }
-    pub fn pop(this: *@This()) void {
-        this.tracked.pop();
+
+    /// stop tracking dependencies
+    pub fn end(this: *@This()) void {
+        _ = this.tracked.pop();
     }
 };
