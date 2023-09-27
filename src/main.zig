@@ -38,16 +38,9 @@ pub fn BijectMap(comptime K: type, comptime V: type) type {
 
         pub const ClearOptions = struct {
             retain_memory: bool = true,
+            assert_empty: bool = false,
         };
         pub fn clearValues(this: *@This(), key: K, opts: ClearOptions) void {
-            @setRuntimeSafety(false);
-            // std.log.warn("clearValues({}) before", .{key});
-            // this.dumpLog();
-            // defer {
-            //     std.log.warn("clearValues({}) after", .{key});
-            //     this.dumpLog();
-            // }
-
             const entry = this.k2v.getEntry(key) orelse return;
             const values_map = entry.value_ptr;
             defer {
@@ -58,6 +51,10 @@ pub fn BijectMap(comptime K: type, comptime V: type) type {
                     values_map.deinit();
                 }
             }
+
+            if (opts.assert_empty)
+                assert(values_map.count() == 0);
+
             var it = values_map.keyIterator();
             while (it.next()) |value| {
                 const entry_set = this.v2k.getEntry(value.*) orelse unreachable;
@@ -165,8 +162,7 @@ pub const DependencyTracker = struct {
     }
 
     pub fn unregister(this: *@This(), signal: SignalId) void {
-        this.pairs.clearValues(signal, .{ .retain_memory = false });
-        // todo: check if any dependent of `signal` is still registered, and warn
+        this.pairs.clearValues(signal, .{ .retain_memory = false, .assert_empty = true });
     }
     // only memos need to be registered
     pub fn register(this: *@This(), signal: SignalId) !void {
@@ -176,10 +172,8 @@ pub const DependencyTracker = struct {
 
     /// mark that `dependency` has changed
     pub fn invalidate(this: *@This(), dependency: SignalId) !void {
-        // std.log.warn("invalidate({})", .{dependency});
         var it = this.pairs.iteratorByValue(dependency) orelse return;
         while (it.next()) |dependent| {
-            // std.log.warn("dep({})", .{dependent.*});
             if (!try this.setDirty(dependent.*, true)) {
                 try this.invalidate(dependent.*);
             }
