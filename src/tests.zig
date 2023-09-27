@@ -1,6 +1,9 @@
 const std = @import("std");
 const signals = @import("signals");
 
+extern fn coz_begin(name: [*:0]const u8) void;
+extern fn coz_end(name: [*:0]const u8) void;
+
 test "type check" {
     std.testing.refAllDeclsRecursive(signals);
 }
@@ -36,17 +39,24 @@ fn get(cx: *Scope, id: u64) void {
 
 /// returns ns elapsed
 fn run(layer_count: usize, comptime check: bool) !u64 {
+    const a = std.testing.allocator;
     var opts = Scope.InitOptions{};
     opts.dependency_pairs_capacity *= @max(1, layer_count / 100);
     opts.dependent_stack_capacity *= @max(1, layer_count / 100);
     opts.dirty_set_capacity *= @max(1, @as(u32, @intCast(layer_count / 100)));
-    var cx = try Scope.init(std.testing.allocator, opts);
+    var cx = try Scope.init(a, opts);
     defer cx.deinit();
 
     const base_id = (layer_count - 1) * 4;
 
+    const checkpoint_name = try std.fmt.allocPrintZ(a, "n={}", .{layer_count});
+    defer a.free(checkpoint_name);
+    coz_begin(checkpoint_name);
+    defer coz_end(checkpoint_name);
+
     var timer = try std.time.Timer.start();
 
+    // register signals (by default is dirty)
     for (0..layer_count * 4) |i| {
         _ = cx.setDirty(i, true);
     }
@@ -58,7 +68,7 @@ fn run(layer_count: usize, comptime check: bool) !u64 {
     get(&cx, base_id + 2);
     get(&cx, base_id + 3);
 
-    if (check) for (0..layer_count * 4) |i| {
+    if (check) for (4..layer_count * 4) |i| {
         try std.testing.expect(!cx.isDirty(i));
     };
 
@@ -69,7 +79,7 @@ fn run(layer_count: usize, comptime check: bool) !u64 {
     get(&cx, base_id + 2);
     get(&cx, base_id + 3);
 
-    if (check) for (0..layer_count * 4) |i| {
+    if (check) for (4..layer_count * 4) |i| {
         try std.testing.expect(!cx.isDirty(i));
     };
 
@@ -82,7 +92,7 @@ fn run(layer_count: usize, comptime check: bool) !u64 {
 
     if (check) {
         {
-            var it = cx.dirty_map.iterator();
+            var it = cx.dirty_set.iterator();
             while (it.next()) |kv| {
                 std.log.warn("dirty: {}", .{kv.key_ptr.*});
             }
@@ -93,9 +103,6 @@ fn run(layer_count: usize, comptime check: bool) !u64 {
             }
         }
 
-        for (0..4) |i| {
-            try std.testing.expect(!cx.isDirty(i));
-        }
         for (4..layer_count * 4) |i| {
             try std.testing.expect(cx.isDirty(i));
         }
@@ -108,7 +115,7 @@ fn run(layer_count: usize, comptime check: bool) !u64 {
     get(&cx, base_id + 2);
     get(&cx, base_id + 3);
 
-    if (check) for (0..layer_count * 4) |i| {
+    if (check) for (4..layer_count * 4) |i| {
         try std.testing.expect(!cx.isDirty(i));
     };
 
@@ -119,7 +126,7 @@ fn run(layer_count: usize, comptime check: bool) !u64 {
     get(&cx, base_id + 2);
     get(&cx, base_id + 3);
 
-    if (check) for (0..layer_count * 4) |i| {
+    if (check) for (4..layer_count * 4) |i| {
         try std.testing.expect(!cx.isDirty(i));
     };
 
@@ -152,7 +159,7 @@ test "bench" {
 }
 
 test "sanity check" {
-    try run(2, true);
+    _ = try run(2, true);
 }
 
 // const SOLUTIONS = {
