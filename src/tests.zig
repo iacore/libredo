@@ -1,44 +1,44 @@
 const std = @import("std");
 const signals = @import("signals");
 
+const What = [4]*signals.Header(f64);
+
+const Context = struct {
+    m: What,
+};
+
 fn run(layer_count: usize) ![4]f64 {
-    const cx = signals.createScope(std.testing.allocator);
+    var cx = try signals.createScope(std.testing.allocator);
     defer cx.deinit();
 
-    const a = try cx.createSignal(f64, 1);
-    const b = try cx.createSignal(f64, 2);
-    const c = try cx.createSignal(f64, 3);
-    const d = try cx.createSignal(f64, 4);
+    var a = cx.createSignal(f64, 1);
+    var b = cx.createSignal(f64, 2);
+    var c = cx.createSignal(f64, 3);
+    var d = cx.createSignal(f64, 4);
 
-    const What = [4]signals.Getter(f64);
-    var layer: What = .{ a, b, c, d };
+    var layer: What = .{ &a.header, &b.header, &c.header, &d.header };
+
+    const S = struct {
+        pub fn fn_a(this: *Context) f64 {
+            return this.m[1].get();
+        }
+        pub fn fn_b(this: *Context) f64 {
+            return this.m[0].get() - this.m[2].get();
+        }
+        pub fn fn_c(this: *Context) f64 {
+            return this.m[1].get() + this.m[3].get();
+        }
+        pub fn fn_d(this: *Context) f64 {
+            return this.m[2].get();
+        }
+    };
 
     for (0..layer_count) |_| {
         layer = .{
-            try cx.createMemo(f64, struct {
-                m: What,
-                pub fn run(this: *@This()) f64 {
-                    return this.m[1].get();
-                }
-            }{ .m = layer }),
-            try cx.createMemo(f64, struct {
-                m: What,
-                pub fn run(this: *@This()) f64 {
-                    return this.m[0].get() - this.m[2].get();
-                }
-            }{ .m = layer }),
-            try cx.createMemo(f64, struct {
-                m: What,
-                pub fn run(this: *@This()) f64 {
-                    return this.m[1].get() + this.m[3].get();
-                }
-            }{ .m = layer }),
-            try cx.createMemo(f64, struct {
-                m: What,
-                pub fn run(this: *@This()) f64 {
-                    return this.m[2].get();
-                }
-            }{ .m = layer }),
+            cx.createMemo(f64, Context{ .m = layer }, S.fn_a),
+            cx.createMemo(f64, Context{ .m = layer }, S.fn_b),
+            cx.createMemo(f64, Context{ .m = layer }, S.fn_c),
+            cx.createMemo(f64, Context{ .m = layer }, S.fn_d),
         };
     }
 
