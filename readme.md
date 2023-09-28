@@ -6,6 +6,12 @@ Benchmark code adapted from [maverick-js/signals](https://github.com/maverick-js
 
 Read [src/main.zig](src/main.zig).
 
+## Use as library
+
+This is a Zig-only library. The module name is called `signals`.
+
+If you don't know how to use a Zig library, use the search engine.
+
 ## Todo
 
 - add test suite
