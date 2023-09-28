@@ -9,15 +9,30 @@ pub const SignalId = u64;
 /// used as BijectMap(dependent, dependency)
 pub fn BijectMap(comptime K: type, comptime V: type) type {
     return struct {
+        //! this data structure is copied from redo and sqlite
+        //! Table primary key is (target,source)
         a: std.mem.Allocator,
+        arr: std.ArrayList(Entry),
+
+        pub const Entry = std.meta.Tuple(&.{ K, V });
+        pub const EntryBytes = [@sizeOf(Entry)]u8;
+        fn toBytes(x: Entry) EntryBytes {
+            return @as(*const EntryBytes, @ptrCast(&x)).*;
+        }
         // todo: add fields here
 
         pub const Iterator = struct {
-            // todo: add fields here
+            value: V,
+            slice: []const Entry,
+            i: usize,
 
             pub fn next(this: *@This()) ?K {
-                _ = this;
-                return undefined;
+                while (this.i < this.slice.len) {
+                    const entry = this.slice[this.i];
+                    this.i += 1;
+                    if (entry[1] == this.value) return entry[0];
+                }
+                return null;
             }
         };
         pub const ClearOptions = struct {
@@ -26,30 +41,77 @@ pub fn BijectMap(comptime K: type, comptime V: type) type {
         };
 
         pub fn init(a: std.mem.Allocator) @This() {
-            return .{ .a = a };
+            return .{ .a = a, .arr = FieldType(@This(), .arr).init(a) };
         }
         pub fn deinit(this: @This()) void {
-            _ = this;
+            this.arr.deinit();
+        }
+        fn _compareFn(_: void, lhs: Entry, rhs: Entry) std.math.Order {
+            return std.mem.order(u8, &toBytes(lhs), &toBytes(rhs));
         }
         // clears all that match (K, *)
         pub fn clearValues(this: *@This(), key: K, opts: ClearOptions) void {
-            // idea: cache lookup, so `add` can be used later
+            // var i = binarySearchNotGreater(Entry, Entry{ key, 0 }, this.arr.items, void{}, _compareFn);
+            var i: usize = 0;
+            while (i < this.arr.items.len) {
+                const item = this.arr.items[i];
+                if (item[0] == key) {
+                    _ = this.arr.orderedRemove(i);
+                } else {
+                    i += 1;
+                }
+            }
+
             _ = opts;
-            _ = key;
-            _ = this;
         }
         pub fn add(this: *@This(), key: K, value: V) !void {
-            _ = value;
-            _ = key;
-            _ = this;
+            const entry = Entry{ key, value };
+            const i = binarySearchNotGreater(Entry, entry, this.arr.items, void{}, _compareFn);
+            const index_in_range = i < this.arr.items.len;
+            const need_insert = if (index_in_range) !std.mem.eql(u8, &toBytes(this.arr.items[i]), &toBytes(entry)) else true;
+            if (need_insert) {
+                if (index_in_range) {
+                    try this.arr.insert(i, entry);
+                } else {
+                    try std.testing.expectEqual(i, this.arr.items.len);
+                    try this.arr.append(entry);
+                }
+            }
         }
         /// iterate all that match (*, V)
-        pub fn iteratorByValue(this: *const @This(), value: V) ?Iterator {
-            _ = value;
-            _ = this;
-            return undefined;
+        pub fn iteratorByValue(this: @This(), value: V) ?Iterator {
+            return Iterator{
+                .value = value,
+                .slice = this.arr.items,
+                .i = 0,
+            };
         }
     };
+}
+
+pub fn binarySearchNotGreater(
+    comptime T: type,
+    key: anytype,
+    items: []const T,
+    context: anytype,
+    comptime compareFn: fn (context: @TypeOf(context), key: @TypeOf(key), mid_item: T) std.math.Order,
+) usize {
+    var left: usize = 0;
+    var right: usize = items.len;
+
+    while (left < right) {
+        // Avoid overflowing in the midpoint calculation
+        const mid = left + (right - left) / 2;
+        // Compare the key with the midpoint element
+        switch (compareFn(context, key, items[mid])) {
+            .eq => return mid,
+            .gt => left = mid + 1,
+            .lt => right = mid,
+        }
+    }
+
+    assert(left == right);
+    return left;
 }
 
 pub const DependencyTracker = struct {
@@ -101,8 +163,8 @@ pub const DependencyTracker = struct {
     pub fn invalidate(this: *@This(), dependency: SignalId) !void {
         var it = this.pairs.iteratorByValue(dependency) orelse return;
         while (it.next()) |dependent| {
-            if (!try this.setDirty(dependent.*, true)) {
-                try this.invalidate(dependent.*);
+            if (!try this.setDirty(dependent, true)) {
+                try this.invalidate(dependent);
             }
         }
     }
