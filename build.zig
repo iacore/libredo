@@ -16,6 +16,7 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
     const opt_test_filter = b.option([]const u8, "test-filter", "test filter");
+    const opt_use_coz = b.option(bool, "coz", "Enable coz profiler") orelse false;
 
     mod = b.addModule("signals", .{
         .source_file = .{ .path = "src/main.zig" },
@@ -25,8 +26,11 @@ pub fn build(b: *std.Build) void {
         .name = "bench",
         .root_source_file = .{ .path = "src/tests.zig" },
     });
-    link(bench, true);
+    link(bench, opt_use_coz);
     b.installArtifact(bench);
+
+    const bench_step = b.step("bench", "Run benchmarks");
+    bench_step.dependOn(&b.addRunArtifact(bench).step);
 
     const tests = b.addTest(.{
         .root_source_file = .{ .path = "src/tests.zig" },

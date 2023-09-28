@@ -3,6 +3,11 @@ attempt to port reactive signal library to Zig
 
 benchmark code adapted from [maverick-js/signals](https://github.com/maverick-js/signals/pull/19/files#diff-ed2047e0fe1c26b6afee97d3b120cc35ee4bc0203bc06be33687736a16ac4a8e).
 
+## Todo
+
+- add test suite
+- add solid.js-like interface
+
 ## optimization ideas
 
 The current `BijectMap` is fast enough already.

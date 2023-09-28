@@ -8,7 +8,7 @@ test "type check" {
     std.testing.refAllDeclsRecursive(signals);
 }
 
-const Scope = signals.DependencyTracker;
+const Scope = signals.dependency_module(u64).Tracker;
 
 fn get(cx: *Scope, id: u64) !void {
     // std.log.warn("get({})", .{id});
@@ -163,16 +163,9 @@ fn run(a: std.mem.Allocator, layer_count: usize, comptime check: bool, comptime 
 }
 
 pub fn main() !void {
-    while (true) {
-        _ = try run(std.heap.c_allocator, 500, false, true);
-    }
-}
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
 
-test "sanity check" {
-    _ = try run(std.testing.allocator, 2, true, false);
-}
-
-test "bench" {
     const RUNS_PER_TIER = 150;
     const LAYER_TIERS = [_]usize{
         10,
@@ -193,11 +186,15 @@ test "bench" {
     for (LAYER_TIERS) |n_layers| {
         var sum: u64 = 0;
         for (0..RUNS_PER_TIER) |_| {
-            sum += try run(std.testing.allocator, n_layers, false, false);
+            sum += try run(gpa.allocator(), n_layers, false, false);
         }
         const ns: f64 = @floatFromInt(sum / RUNS_PER_TIER);
         const ms = ns / std.time.ns_per_ms;
 
         try stderr.print("n_layers={} avg {d}ms\n", .{ n_layers, ms });
     }
+}
+
+test "sanity check" {
+    _ = try run(std.testing.allocator, 2, true, false);
 }
