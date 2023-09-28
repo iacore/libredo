@@ -5,8 +5,8 @@ benchmark code adapted from [maverick-js/signals](https://github.com/maverick-js
 
 ## optimization ideas
 
-cache lookup, so `BijectMap.add` can be used later faster
+The current `BijectMap` is fast enough already.
 
-coz: tested. not useful.
-
-ReleaseFast: same speed as ReleaseSafe.
+- cache lookup, so `BijectMap.add` can be used later faster
+- coz: tested. not useful.
+- ReleaseFast: same speed as ReleaseSafe.

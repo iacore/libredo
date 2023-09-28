@@ -11,6 +11,7 @@ pub fn BijectMap(comptime K: type, comptime V: type) type {
     return struct {
         //! this data structure is copied from redo and sqlite
         //! Table primary key is (target,source)
+
         a: std.mem.Allocator,
         arr: std.ArrayList(Entry),
 
@@ -19,7 +20,6 @@ pub fn BijectMap(comptime K: type, comptime V: type) type {
         fn toBytes(x: Entry) EntryBytes {
             return @as(*const EntryBytes, @ptrCast(&x)).*;
         }
-        // todo: add fields here
 
         pub const Iterator = struct {
             value: V,
@@ -35,10 +35,6 @@ pub fn BijectMap(comptime K: type, comptime V: type) type {
                 return null;
             }
         };
-        pub const ClearOptions = struct {
-            retain_memory: bool = true,
-            assert_empty: bool = false,
-        };
 
         pub fn init(a: std.mem.Allocator) @This() {
             return .{ .a = a, .arr = FieldType(@This(), .arr).init(a) };
@@ -50,7 +46,7 @@ pub fn BijectMap(comptime K: type, comptime V: type) type {
             return std.mem.order(u8, &toBytes(lhs), &toBytes(rhs));
         }
         // clears all that match (K, *)
-        pub fn clearValues(this: *@This(), key: K, opts: ClearOptions) void {
+        pub fn clearValues(this: *@This(), key: K) void {
             const start = binarySearchNotGreater(Entry, Entry{ key, 0 }, this.arr.items, void{}, _compareFn);
             var i = start;
             // var i: usize = 0;
@@ -65,8 +61,6 @@ pub fn BijectMap(comptime K: type, comptime V: type) type {
             }
             if (len > 0)
                 this.arr.replaceRange(start, len, &.{}) catch unreachable;
-
-            _ = opts;
         }
         pub fn add(this: *@This(), key: K, value: V) !void {
             const entry = Entry{ key, value };
@@ -155,7 +149,7 @@ pub const DependencyTracker = struct {
     }
 
     pub fn unregister(this: *@This(), signal: SignalId) void {
-        this.pairs.clearValues(signal, .{ .retain_memory = false, .assert_empty = true });
+        this.pairs.clearValues(signal);
     }
     // only memos need to be registered
     pub fn register(this: *@This(), signal: SignalId) !void {
@@ -182,7 +176,7 @@ pub const DependencyTracker = struct {
 
     /// start tracking dependencies
     pub fn begin(this: *@This(), dependent: SignalId) !void {
-        this.pairs.clearValues(dependent, .{});
+        this.pairs.clearValues(dependent);
 
         try this.tracked.append(dependent);
     }
