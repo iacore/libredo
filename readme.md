@@ -1,6 +1,6 @@
-Reactive signal library in Zig.
+Reactive signal/Dependency tracking library in Zig. You can use this in UI code or in a build system.
 
-Benchmark code adapted from [maverick-js/signals](https://github.com/maverick-js/signals/pull/19/files#diff-ed2047e0fe1c26b6afee97d3b120cc35ee4bc0203bc06be33687736a16ac4a8e).
+Dependency graph data structure inspired by [redo](https://github.com/apenwarr/redo). Dependency tracker algorithom inspired by [trkl](https://github.com/jbreckmckye/trkl). Benchmark code adapted from [maverick-js/signals](https://github.com/maverick-js/signals/pull/19/files#diff-ed2047e0fe1c26b6afee97d3b120cc35ee4bc0203bc06be33687736a16ac4a8e).
 
 ## Documentation
 
