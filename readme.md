@@ -14,7 +14,7 @@ If you don't know how to use a Zig library, use the search engine.
 
 ## Todo
 
-- add test suite
+- add test suite more more tests
 - add solid.js-like interface
 
 ## optimization ideas

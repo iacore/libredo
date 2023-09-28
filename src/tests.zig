@@ -8,7 +8,8 @@ test "type check" {
     std.testing.refAllDeclsRecursive(signals);
 }
 
-const Scope = signals.dependency_module(u64).Tracker;
+const mod = signals.dependency_module(u64);
+const Scope = mod.Tracker;
 
 fn get(cx: *Scope, id: u64) !void {
     // std.log.warn("get({})", .{id});
@@ -162,6 +163,78 @@ fn run(a: std.mem.Allocator, layer_count: usize, comptime check: bool, comptime 
     return ns_prepare + ns0;
 }
 
+test "sanity check" {
+    _ = try run(std.testing.allocator, 2, true, false);
+}
+
+test "verify dependency" {
+    var cx = try Scope.init(std.testing.allocator);
+    defer cx.deinit();
+
+    try std.testing.expectEqualDeep(@as([]const mod.Entry, &.{}), cx.pairs.arr.items);
+
+    for (0..16) |i| try cx.register(i);
+
+    try std.testing.expectEqualDeep(@as([]const mod.Entry, &.{}), cx.pairs.arr.items);
+
+    for (12..16) |i| try get(&cx, i);
+
+    const expected = [_]mod.Entry{
+        .{ 4, 1 },
+        .{ 5, 0 },
+        .{ 5, 2 },
+        .{ 6, 1 },
+        .{ 6, 3 },
+        .{ 7, 2 },
+        .{ 8, 5 },
+        .{ 9, 4 },
+        .{ 9, 6 },
+        .{ 10, 5 },
+        .{ 10, 7 },
+        .{ 11, 6 },
+        .{ 12, 9 },
+        .{ 13, 8 },
+        .{ 13, 10 },
+        .{ 14, 9 },
+        .{ 14, 11 },
+        .{ 15, 10 },
+    };
+    try std.testing.expectEqualDeep(@as([]const mod.Entry, &expected), cx.pairs.arr.items);
+}
+
+fn get2(cx: *Scope, id: u64) !void {
+    try cx.used(id);
+    if (try cx.setDirty(id, false)) {
+        try cx.begin(id);
+        defer cx.end();
+        switch (id % 3) {
+            0 => {
+                try get2(cx, 1);
+            },
+            1 => {
+                try get2(cx, 2);
+            },
+            2 => {
+                try get2(cx, 3);
+            },
+            else => unreachable,
+        }
+    }
+}
+
+test "cyclic dependency graph" {
+    var cx = try Scope.init(std.testing.allocator);
+    defer cx.deinit();
+    for (1..4) |i| try cx.register(i);
+    try get2(&cx, 3);
+    try get2(&cx, 2);
+    try get2(&cx, 1);
+    cx._dumpLog();
+    try cx.invalidate(1);
+    cx._dumpLog();
+}
+
+/// benchmark
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -193,8 +266,4 @@ pub fn main() !void {
 
         try stderr.print("n_layers={} avg {d}ms\n", .{ n_layers, ms });
     }
-}
-
-test "sanity check" {
-    _ = try run(std.testing.allocator, 2, true, false);
 }

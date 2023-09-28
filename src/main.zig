@@ -101,7 +101,6 @@ pub fn BijectMap(comptime K: type, comptime V: type) type {
         }
         /// debug only
         pub fn _dumpLog(this: @This()) void {
-            std.log.warn("dumpLog", .{});
             for (this.arr.items) |x| {
                 std.log.warn("{} -> {}", x);
             }
@@ -266,6 +265,15 @@ pub fn dependency_module(comptime id_type: type) type {
                 if (this.tracked.items.len == 0) return;
                 const collector = &this.tracked.items[this.tracked.items.len - 1];
                 try collector.add(dependency);
+            }
+
+            pub fn _dumpLog(this: @This()) void {
+                std.log.warn("#dep={} #dirty={}", .{ this.pairs.arr.items.len, this.dirty_set.count() });
+                this.pairs._dumpLog();
+                var it = this.dirty_set.iterator();
+                while (it.next()) |kv| {
+                    std.log.warn("dirty: {}", .{kv.key_ptr.*});
+                }
             }
         };
     };
