@@ -9,120 +9,113 @@ pub const SignalId = u64;
 /// used as BijectMap(dependent, dependency)
 pub fn BijectMap(comptime K: type, comptime V: type) type {
     return struct {
+        //! this data structure is copied from redo and sqlite
+        //! Table primary key is (target,source)
         a: std.mem.Allocator,
-        k2v: std.AutoHashMap(K, std.AutoHashMap(V, void)),
-        v2k: std.AutoHashMap(V, std.AutoHashMap(K, void)),
+        arr: std.ArrayList(Entry),
 
-        pub const Iterator = std.AutoHashMap(K, void).KeyIterator;
-
-        pub fn init(a: std.mem.Allocator) @This() {
-            return .{
-                .a = a,
-                .k2v = FieldType(@This(), .k2v).init(a),
-                .v2k = FieldType(@This(), .v2k).init(a),
-            };
+        pub const Entry = std.meta.Tuple(&.{ K, V });
+        pub const EntryBytes = [@sizeOf(Entry)]u8;
+        fn toBytes(x: Entry) EntryBytes {
+            return @as(*const EntryBytes, @ptrCast(&x)).*;
         }
-        pub fn deinit(this: @This()) void {
-            var _this = this;
-            {
-                var it = _this.k2v.valueIterator();
-                while (it.next()) |arr| arr.deinit();
-                _this.k2v.deinit();
-            }
-            {
-                var it = _this.v2k.valueIterator();
-                while (it.next()) |arr| arr.deinit();
-                _this.v2k.deinit();
-            }
-        }
+        // todo: add fields here
 
+        pub const Iterator = struct {
+            value: V,
+            slice: []const Entry,
+            i: usize,
+
+            pub fn next(this: *@This()) ?K {
+                while (this.i < this.slice.len) {
+                    const entry = this.slice[this.i];
+                    this.i += 1;
+                    if (entry[1] == this.value) return entry[0];
+                }
+                return null;
+            }
+        };
         pub const ClearOptions = struct {
             retain_memory: bool = true,
             assert_empty: bool = false,
         };
+
+        pub fn init(a: std.mem.Allocator) @This() {
+            return .{ .a = a, .arr = FieldType(@This(), .arr).init(a) };
+        }
+        pub fn deinit(this: @This()) void {
+            this.arr.deinit();
+        }
+        fn _compareFn(_: void, lhs: Entry, rhs: Entry) std.math.Order {
+            return std.mem.order(u8, &toBytes(lhs), &toBytes(rhs));
+        }
+        // clears all that match (K, *)
         pub fn clearValues(this: *@This(), key: K, opts: ClearOptions) void {
-            const entry = this.k2v.getEntry(key) orelse return;
-            const values_map = entry.value_ptr;
-            defer {
-                if (opts.retain_memory) {
-                    values_map.clearRetainingCapacity();
+            const start = binarySearchNotGreater(Entry, Entry{ key, 0 }, this.arr.items, void{}, _compareFn);
+            var i = start;
+            // var i: usize = 0;
+            var len: usize = 0;
+            while (i < this.arr.items.len) : (i += 1) {
+                const item = this.arr.items[i];
+                if (item[0] == key) {
+                    len += 1;
                 } else {
-                    this.k2v.removeByPtr(entry.key_ptr);
-                    values_map.deinit();
+                    break;
                 }
             }
+            if (len > 0)
+                this.arr.replaceRange(start, len, &.{}) catch unreachable;
 
-            if (opts.assert_empty)
-                assert(values_map.count() == 0);
-
-            var it = values_map.keyIterator();
-            while (it.next()) |value| {
-                const entry_set = this.v2k.getEntry(value.*) orelse unreachable;
-                const set = entry_set.value_ptr;
-                defer {
-                    if (set.count() == 0) {
-                        if (opts.retain_memory) {
-                            set.clearRetainingCapacity();
-                        } else {
-                            set.deinit();
-                            this.v2k.removeByPtr(entry_set.key_ptr);
-                        }
-                    }
-                }
-                const remove_ok = set.remove(key);
-                if (!remove_ok) unreachable;
-            }
+            _ = opts;
         }
         pub fn add(this: *@This(), key: K, value: V) !void {
-            {
-                const entry = try this.k2v.getOrPut(key);
-                if (!entry.found_existing) {
-                    entry.value_ptr.* = @TypeOf(entry.value_ptr.*).init(this.a);
+            const entry = Entry{ key, value };
+            const i = binarySearchNotGreater(Entry, entry, this.arr.items, void{}, _compareFn);
+            const index_in_range = i < this.arr.items.len;
+            const need_insert = if (index_in_range) !std.mem.eql(u8, &toBytes(this.arr.items[i]), &toBytes(entry)) else true;
+            if (need_insert) {
+                if (index_in_range) {
+                    try this.arr.insert(i, entry);
+                } else {
+                    try std.testing.expectEqual(i, this.arr.items.len);
+                    try this.arr.append(entry);
                 }
-                try entry.value_ptr.put(value, void{});
-            }
-            {
-                const entry = try this.v2k.getOrPut(value);
-                if (!entry.found_existing) {
-                    entry.value_ptr.* = @TypeOf(entry.value_ptr.*).init(this.a);
-                }
-                try entry.value_ptr.put(key, void{});
             }
         }
-        /// iterate keys that has value
-        pub fn iteratorByValue(this: *const @This(), value: V) ?Iterator {
-            const keys = this.v2k.get(value) orelse return null;
-            return keys.keyIterator();
-        }
-        pub fn dumpLog(this: @This()) void {
-            {
-                std.log.warn("k2v:", .{});
-                var it = this.k2v.iterator();
-                while (it.next()) |entry| {
-                    const key = entry.key_ptr.*;
-
-                    var it1 = entry.value_ptr.*.iterator();
-                    while (it1.next()) |entry1| {
-                        const value = entry1.key_ptr.*;
-                        std.log.warn("{} -> {}", .{ key, value });
-                    }
-                }
-            }
-            {
-                std.log.warn("v2k:", .{});
-                var it = this.v2k.iterator();
-                while (it.next()) |entry| {
-                    const key = entry.key_ptr.*;
-
-                    var it1 = entry.value_ptr.*.iterator();
-                    while (it1.next()) |entry1| {
-                        const value = entry1.key_ptr.*;
-                        std.log.warn("{} -> {}", .{ key, value });
-                    }
-                }
-            }
+        /// iterate all that match (*, V)
+        pub fn iteratorByValue(this: @This(), value: V) ?Iterator {
+            return Iterator{
+                .value = value,
+                .slice = this.arr.items,
+                .i = 0,
+            };
         }
     };
+}
+
+pub fn binarySearchNotGreater(
+    comptime T: type,
+    key: anytype,
+    items: []const T,
+    context: anytype,
+    comptime compareFn: fn (context: @TypeOf(context), key: @TypeOf(key), mid_item: T) std.math.Order,
+) usize {
+    var left: usize = 0;
+    var right: usize = items.len;
+
+    while (left < right) {
+        // Avoid overflowing in the midpoint calculation
+        const mid = left + (right - left) / 2;
+        // Compare the key with the midpoint element
+        switch (compareFn(context, key, items[mid])) {
+            .eq => return mid,
+            .gt => left = mid + 1,
+            .lt => right = mid,
+        }
+    }
+
+    assert(left == right);
+    return left;
 }
 
 pub const DependencyTracker = struct {
@@ -174,8 +167,8 @@ pub const DependencyTracker = struct {
     pub fn invalidate(this: *@This(), dependency: SignalId) !void {
         var it = this.pairs.iteratorByValue(dependency) orelse return;
         while (it.next()) |dependent| {
-            if (!try this.setDirty(dependent.*, true)) {
-                try this.invalidate(dependent.*);
+            if (!try this.setDirty(dependent, true)) {
+                try this.invalidate(dependent);
             }
         }
     }
