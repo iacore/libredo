@@ -12,7 +12,14 @@ pub fn BijectMap(comptime K: type, comptime V: type) type {
         a: std.mem.Allocator,
         // todo: add fields here
 
-        pub const Iterator = undefined;
+        pub const Iterator = struct {
+            // todo: add fields here
+
+            pub fn next(this: *@This()) ?K {
+                _ = this;
+                return undefined;
+            }
+        };
         pub const ClearOptions = struct {
             retain_memory: bool = true,
             assert_empty: bool = false,
@@ -24,6 +31,7 @@ pub fn BijectMap(comptime K: type, comptime V: type) type {
         pub fn deinit(this: @This()) void {
             _ = this;
         }
+        // clears all that match (K, *)
         pub fn clearValues(this: *@This(), key: K, opts: ClearOptions) void {
             // idea: cache lookup, so `add` can be used later
             _ = opts;
@@ -35,7 +43,7 @@ pub fn BijectMap(comptime K: type, comptime V: type) type {
             _ = key;
             _ = this;
         }
-        /// iterate keys that has value
+        /// iterate all that match (*, V)
         pub fn iteratorByValue(this: *const @This(), value: V) ?Iterator {
             _ = value;
             _ = this;
