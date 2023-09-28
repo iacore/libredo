@@ -1,0 +1,4 @@
+#!/usr/bin/fish
+
+rm -rf .redo
+time redo --no-status --no-pretty $argv[1] 2>/dev/null

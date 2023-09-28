@@ -95,6 +95,7 @@ fn run(a: std.mem.Allocator, layer_count: usize, comptime check: bool, comptime 
     };
 
     const ns1 = timer.lap();
+    _ = ns1;
 
     try cx.invalidate(0);
     try cx.invalidate(1);
@@ -103,12 +104,12 @@ fn run(a: std.mem.Allocator, layer_count: usize, comptime check: bool, comptime 
 
     if (check) {
         // cx.pairs.dumpLog();
-        {
-            var it = cx.dirty_set.iterator();
-            while (it.next()) |kv| {
-                std.log.warn("dirty: {}", .{kv.key_ptr.*});
-            }
-        }
+        // {
+        //     var it = cx.dirty_set.iterator();
+        //     while (it.next()) |kv| {
+        //         std.log.warn("dirty: {}", .{kv.key_ptr.*});
+        //     }
+        // }
         // {
         //     for (cx.pairs.items) |kv| {
         //         std.log.warn("dep: {} -> {}", .{ kv[0], kv[1] });
@@ -121,6 +122,7 @@ fn run(a: std.mem.Allocator, layer_count: usize, comptime check: bool, comptime 
     }
 
     const ns2 = timer.lap();
+    _ = ns2;
 
     try get(&cx, base_id + 0);
     // std.log.warn("after base_id+0", .{});
@@ -139,6 +141,7 @@ fn run(a: std.mem.Allocator, layer_count: usize, comptime check: bool, comptime 
     };
 
     const ns3 = timer.lap();
+    _ = ns3;
 
     try get(&cx, base_id + 0);
     try get(&cx, base_id + 1);
@@ -150,10 +153,12 @@ fn run(a: std.mem.Allocator, layer_count: usize, comptime check: bool, comptime 
     };
 
     const ns4 = timer.lap();
+    _ = ns4;
 
-    // std.log.warn("time used: {any}", .{[_]u64{ ns_start, ns0, ns1, ns2, ns3, ns4 }});
+    // std.log.warn("time used: {any}", .{[_]u64{ ns_prepare, ns0, ns1, ns2, ns3, ns4 }});
 
-    return ns_prepare + ns0 + ns1 + ns2 + ns3 + ns4;
+    // return ns_prepare + ns0 + ns1 + ns2 + ns3 + ns4;
+    return ns_prepare + ns0;
 }
 
 pub fn main() !void {
