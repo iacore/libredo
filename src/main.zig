@@ -51,16 +51,20 @@ pub fn BijectMap(comptime K: type, comptime V: type) type {
         }
         // clears all that match (K, *)
         pub fn clearValues(this: *@This(), key: K, opts: ClearOptions) void {
-            // var i = binarySearchNotGreater(Entry, Entry{ key, 0 }, this.arr.items, void{}, _compareFn);
-            var i: usize = 0;
-            while (i < this.arr.items.len) {
+            const start = binarySearchNotGreater(Entry, Entry{ key, 0 }, this.arr.items, void{}, _compareFn);
+            var i = start;
+            // var i: usize = 0;
+            var len: usize = 0;
+            while (i < this.arr.items.len) : (i += 1) {
                 const item = this.arr.items[i];
                 if (item[0] == key) {
-                    _ = this.arr.orderedRemove(i);
+                    len += 1;
                 } else {
-                    i += 1;
+                    break;
                 }
             }
+            if (len > 0)
+                this.arr.replaceRange(start, len, &.{}) catch unreachable;
 
             _ = opts;
         }
