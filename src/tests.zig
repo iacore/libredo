@@ -226,12 +226,15 @@ test "cyclic dependency graph" {
     var cx = try Scope.init(std.testing.allocator);
     defer cx.deinit();
     try std.testing.expectEqual(@as(u32, 0), cx.dirty_set.count());
+    try std.testing.expectEqualDeep(@as([]const mod.Entry, &.{}), cx.pairs.arr.items);
     for (1..4) |i| try cx.register(i);
     try std.testing.expectEqual(@as(u32, 3), cx.dirty_set.count());
+    try std.testing.expectEqualDeep(@as([]const mod.Entry, &.{}), cx.pairs.arr.items);
     for (1..4) |i| {
         try get2(&cx, 3);
         try get2(&cx, 2);
         try get2(&cx, 1);
+        try std.testing.expectEqualDeep(@as([]const mod.Entry, &.{ .{ 1, 2 }, .{ 2, 3 }, .{ 3, 1 } }), cx.pairs.arr.items);
         try std.testing.expectEqual(@as(u32, 0), cx.dirty_set.count());
         try cx.invalidate(i);
         try std.testing.expectEqual(@as(u32, 3), cx.dirty_set.count());
