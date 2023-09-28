@@ -42,11 +42,44 @@ pub fn BijectMap(comptime K: type, comptime V: type) type {
         pub fn deinit(this: @This()) void {
             this.arr.deinit();
         }
-        fn _compareFn(_: void, lhs: Entry, rhs: Entry) std.math.Order {
+        pub fn _compareFn(_: void, lhs: Entry, rhs: Entry) std.math.Order {
             return std.mem.order(u8, &toBytes(lhs), &toBytes(rhs));
         }
-        // clears all that match (K, *)
-        pub fn clearValues(this: *@This(), key: K) void {
+        pub fn _lessThanFn(_: void, lhs: Entry, rhs: Entry) bool {
+            return std.mem.lessThan(u8, &toBytes(lhs), &toBytes(rhs));
+        }
+        // // clears all that match (K, *)
+        // pub fn clearValues(this: *@This(), key: K) void {
+        //     const start = binarySearchNotGreater(Entry, Entry{ key, 0 }, this.arr.items, void{}, _compareFn);
+        //     var i = start;
+        //     // var i: usize = 0;
+        //     var len: usize = 0;
+        //     while (i < this.arr.items.len) : (i += 1) {
+        //         const item = this.arr.items[i];
+        //         if (item[0] == key) {
+        //             len += 1;
+        //         } else {
+        //             break;
+        //         }
+        //     }
+        //     if (len > 0)
+        //         this.arr.replaceRange(start, len, &.{}) catch unreachable;
+        // }
+        // pub fn add(this: *@This(), key: K, value: V) !void {
+        //     const entry = Entry{ key, value };
+        //     const i = binarySearchNotGreater(Entry, entry, this.arr.items, void{}, _compareFn);
+        //     const index_in_range = i < this.arr.items.len;
+        //     const need_insert = if (index_in_range) !std.mem.eql(u8, &toBytes(this.arr.items[i]), &toBytes(entry)) else true;
+        //     if (need_insert) {
+        //         if (index_in_range) {
+        //             try this.arr.insert(i, entry);
+        //         } else {
+        //             try std.testing.expectEqual(i, this.arr.items.len);
+        //             try this.arr.append(entry);
+        //         }
+        //     }
+        // }
+        pub fn replaceValues(this: *@This(), key: K, values: []const Entry) void {
             const start = binarySearchNotGreater(Entry, Entry{ key, 0 }, this.arr.items, void{}, _compareFn);
             var i = start;
             // var i: usize = 0;
@@ -59,23 +92,13 @@ pub fn BijectMap(comptime K: type, comptime V: type) type {
                     break;
                 }
             }
-            if (len > 0)
-                this.arr.replaceRange(start, len, &.{}) catch unreachable;
+            if (len > 0 or values.len > 0)
+                this.arr.replaceRange(start, len, values) catch unreachable;
         }
-        pub fn add(this: *@This(), key: K, value: V) !void {
-            const entry = Entry{ key, value };
-            const i = binarySearchNotGreater(Entry, entry, this.arr.items, void{}, _compareFn);
-            const index_in_range = i < this.arr.items.len;
-            const need_insert = if (index_in_range) !std.mem.eql(u8, &toBytes(this.arr.items[i]), &toBytes(entry)) else true;
-            if (need_insert) {
-                if (index_in_range) {
-                    try this.arr.insert(i, entry);
-                } else {
-                    try std.testing.expectEqual(i, this.arr.items.len);
-                    try this.arr.append(entry);
-                }
-            }
+        pub fn clearValues(this: *@This(), key: K) void {
+            this.replaceValues(key, &.{});
         }
+
         /// iterate all that match (*, V)
         pub fn iteratorByValue(this: @This(), value: V) ?Iterator {
             return Iterator{
@@ -83,6 +106,13 @@ pub fn BijectMap(comptime K: type, comptime V: type) type {
                 .slice = this.arr.items,
                 .i = 0,
             };
+        }
+
+        pub fn dumpLog(this: @This()) void {
+            std.log.warn("dumpLog", .{});
+            for (this.arr.items) |x| {
+                std.log.warn("{} -> {}", x);
+            }
         }
     };
 }
@@ -112,16 +142,40 @@ pub fn binarySearchNotGreater(
     return left;
 }
 
+pub const DependencyMap = BijectMap(SignalId, SignalId);
+pub const DependencyEntry = DependencyMap.Entry;
+pub const DependencyCollector = struct {
+    dependent: SignalId,
+    dependencies: std.ArrayList(DependencyEntry),
+
+    pub fn init(a: std.mem.Allocator, dependent: SignalId) @This() {
+        return .{
+            .dependent = dependent,
+            .dependencies = FieldType(@This(), .dependencies).init(a),
+        };
+    }
+    pub fn deinit(this: @This()) void {
+        this.dependencies.deinit();
+    }
+    pub fn add(this: *@This(), dependency: SignalId) !void {
+        try this.dependencies.append(.{ this.dependent, dependency });
+    }
+    pub fn getSortedList(this: @This()) []const DependencyEntry {
+        std.mem.sort(DependencyEntry, this.dependencies.items, void{}, DependencyMap._lessThanFn);
+        return this.dependencies.items;
+    }
+};
+
 pub const DependencyTracker = struct {
     /// .{dependent, dependency}
-    pub const KeyValuePair = std.meta.Tuple(&.{ SignalId, SignalId });
-
-    tracked: std.ArrayList(SignalId),
-    pairs: BijectMap(SignalId, SignalId),
+    a: std.mem.Allocator,
+    tracked: std.ArrayList(DependencyCollector),
+    pairs: DependencyMap,
     dirty_set: std.AutoHashMap(SignalId, void),
 
     pub fn init(a: std.mem.Allocator) !@This() {
         return .{
+            .a = a,
             .tracked = FieldType(@This(), .tracked).init(a),
             .pairs = FieldType(@This(), .pairs).init(a),
             .dirty_set = FieldType(@This(), .dirty_set).init(a),
@@ -169,20 +223,22 @@ pub const DependencyTracker = struct {
 
     /// mark that`dependency` is used
     pub fn used(this: *@This(), dependency: SignalId) !void {
-        if (this.tracked.getLastOrNull()) |dependent| {
-            try this.pairs.add(dependent, dependency);
-        }
+        if (this.tracked.items.len == 0) return;
+        const collector = &this.tracked.items[this.tracked.items.len - 1];
+        try collector.add(dependency);
     }
 
     /// start tracking dependencies
     pub fn begin(this: *@This(), dependent: SignalId) !void {
-        this.pairs.clearValues(dependent);
-
-        try this.tracked.append(dependent);
+        try this.tracked.append(DependencyCollector.init(this.a, dependent));
     }
 
     /// stop tracking dependencies
     pub fn end(this: *@This()) void {
-        _ = this.tracked.pop();
+        const collector: DependencyCollector = this.tracked.pop();
+        defer collector.deinit();
+        const sorted_list = collector.getSortedList();
+        this.pairs.replaceValues(collector.dependent, sorted_list);
+        // std.log.warn("replace({}, {any})", .{ collector.dependent, sorted_list });
     }
 };

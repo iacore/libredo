@@ -104,6 +104,7 @@ fn run(a: std.mem.Allocator, layer_count: usize, comptime check: bool, comptime 
 
     if (check) {
         // cx.pairs.dumpLog();
+
         // {
         //     var it = cx.dirty_set.iterator();
         //     while (it.next()) |kv| {
