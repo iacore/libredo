@@ -1,7 +1,10 @@
-What is this:
-attempt to port reactive signal library to Zig
+Reactive signal library in Zig.
 
-benchmark code adapted from [maverick-js/signals](https://github.com/maverick-js/signals/pull/19/files#diff-ed2047e0fe1c26b6afee97d3b120cc35ee4bc0203bc06be33687736a16ac4a8e).
+Benchmark code adapted from [maverick-js/signals](https://github.com/maverick-js/signals/pull/19/files#diff-ed2047e0fe1c26b6afee97d3b120cc35ee4bc0203bc06be33687736a16ac4a8e).
+
+## Documentation
+
+Read [src/main.zig](src/main.zig).
 
 ## Todo
 

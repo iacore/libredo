@@ -1,3 +1,15 @@
+test "Table Of Contents" {
+    _ = .{
+        // Dependency graph as trie, for direct dependency tracking
+        // If you are building a build system, this is what you need
+        BijectMap(u64, u64),
+
+        // redo/Solid.JS-like automatic dependency tracker.
+        // Data not included (you need to manage data yourself).
+        dependency_module(u64).Tracker,
+    };
+}
+
 const std = @import("std");
 const FieldType = std.meta.FieldType;
 const assert = std.debug.assert;
@@ -129,14 +141,14 @@ pub fn binarySearchNotGreater(
 /// Returns a struct filled with types.
 pub fn dependency_module(comptime id_type: type) type {
     return struct {
-        pub const NodeId = id_type;
-        pub const Map = BijectMap(NodeId, NodeId);
+        pub const TaskId = id_type;
+        pub const Map = BijectMap(TaskId, TaskId);
         pub const Entry = Map.Entry;
         pub const Collector = struct {
-            dependent: NodeId,
+            dependent: TaskId,
             dependencies: std.ArrayList(Entry),
 
-            pub fn init(a: std.mem.Allocator, dependent: NodeId) @This() {
+            pub fn init(a: std.mem.Allocator, dependent: TaskId) @This() {
                 return .{
                     .dependent = dependent,
                     .dependencies = FieldType(@This(), .dependencies).init(a),
@@ -145,7 +157,7 @@ pub fn dependency_module(comptime id_type: type) type {
             pub fn deinit(this: @This()) void {
                 this.dependencies.deinit();
             }
-            pub fn add(this: *@This(), dependency: NodeId) !void {
+            pub fn add(this: *@This(), dependency: TaskId) !void {
                 try this.dependencies.append(.{ this.dependent, dependency });
             }
             pub fn getSortedList(this: @This()) []const Entry {
@@ -154,12 +166,34 @@ pub fn dependency_module(comptime id_type: type) type {
             }
         };
 
+        /// Auto Depnedency Tracker like Solid.JS
+        ///
+        /// For usage, check below.
+        ///
+        /// For example, please refer to function `run` in tests.zig for usage.
         pub const Tracker = struct {
-            /// .{dependent, dependency}
+            test "Usage" {
+                _ = .{
+                    // Register tasks
+                    register,
+                    unregister,
+                    //
+                    // Query and set task status
+                    isDirty,
+                    setDirty,
+                    invalidate,
+                    //
+                    // Tracking dependencies
+                    begin,
+                    end,
+                    used,
+                };
+            }
+
             a: std.mem.Allocator,
             tracked: std.ArrayList(Collector),
             pairs: Map,
-            dirty_set: std.AutoHashMap(NodeId, void),
+            dirty_set: std.AutoHashMap(TaskId, void),
 
             pub fn init(a: std.mem.Allocator) !@This() {
                 return .{
@@ -176,12 +210,25 @@ pub fn dependency_module(comptime id_type: type) type {
                 dict.deinit();
             }
 
-            pub fn isDirty(this: @This(), dependency: NodeId) bool {
+            /// register non-source task
+            ///
+            /// source tasks (ones that do not depend on anything) do not need to be registered
+            pub fn register(this: *@This(), task_id: TaskId) !void {
+                const res = try this.setDirty(task_id, true);
+                if (res) std.debug.panic("task_id already registered: {}", .{task_id});
+            }
+            /// unregister non-source task
+            pub fn unregister(this: *@This(), task_id: TaskId) void {
+                this.pairs.replaceValues(task_id, &.{});
+            }
+
+            /// check if the task need to be re-run
+            pub fn isDirty(this: @This(), dependency: TaskId) bool {
                 return this.dirty_set.contains(dependency);
             }
 
-            /// returns previous state
-            pub fn setDirty(this: *@This(), dependency: NodeId, value: bool) !bool {
+            /// set task dirty state, returns previous state
+            pub fn setDirty(this: *@This(), dependency: TaskId, value: bool) !bool {
                 if (value) {
                     const res = try this.dirty_set.getOrPut(dependency);
                     return res.found_existing;
@@ -190,17 +237,8 @@ pub fn dependency_module(comptime id_type: type) type {
                 }
             }
 
-            pub fn unregister(this: *@This(), signal: NodeId) void {
-                this.pairs.replaceValues(signal, &.{});
-            }
-            // only memos need to be registered
-            pub fn register(this: *@This(), signal: NodeId) !void {
-                const res = try this.setDirty(signal, true);
-                if (res) std.debug.panic("Signal already registered: {}", .{signal});
-            }
-
-            /// mark that `dependency` has changed
-            pub fn invalidate(this: *@This(), dependency: NodeId) !void {
+            /// mark that the task has changed
+            pub fn invalidate(this: *@This(), dependency: TaskId) !void {
                 var it = this.pairs.iteratorByValue(dependency) orelse return;
                 while (it.next()) |dependent| {
                     if (!try this.setDirty(dependent, true)) {
@@ -209,15 +247,8 @@ pub fn dependency_module(comptime id_type: type) type {
                 }
             }
 
-            /// mark that`dependency` is used
-            pub fn used(this: *@This(), dependency: NodeId) !void {
-                if (this.tracked.items.len == 0) return;
-                const collector = &this.tracked.items[this.tracked.items.len - 1];
-                try collector.add(dependency);
-            }
-
             /// start tracking dependencies
-            pub fn begin(this: *@This(), dependent: NodeId) !void {
+            pub fn begin(this: *@This(), dependent: TaskId) !void {
                 try this.tracked.append(Collector.init(this.a, dependent));
             }
 
@@ -228,6 +259,13 @@ pub fn dependency_module(comptime id_type: type) type {
                 const sorted_list = collector.getSortedList();
                 this.pairs.replaceValues(collector.dependent, sorted_list);
                 // std.log.warn("replace({}, {any})", .{ collector.dependent, sorted_list });
+            }
+
+            /// mark that`dependency` is used
+            pub fn used(this: *@This(), dependency: TaskId) !void {
+                if (this.tracked.items.len == 0) return;
+                const collector = &this.tracked.items[this.tracked.items.len - 1];
+                try collector.add(dependency);
             }
         };
     };
