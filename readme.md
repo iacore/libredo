@@ -8,9 +8,9 @@ Read [src/main.zig](src/main.zig#L1).
 
 ## Use as library
 
-This is a Zig-only library. The module name is called `signals`.
+This is a Zig-only library. The module name is called `signals`. This git repo has no submodule, so the tarball can be used in .zon directly.
 
-If you don't know how to use a Zig library, use the search engine.
+If you don't know how to use a Zig library, use the search engine to look it up.
 
 ## Todo
 
