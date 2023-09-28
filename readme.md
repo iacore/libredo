@@ -4,7 +4,7 @@ Dependency graph data structure inspired by [redo](https://github.com/apenwarr/r
 
 ## Documentation
 
-Read [src/main.zig](src/main.zig).
+Read [src/main.zig](src/main.zig#L1).
 
 ## Use as library
 

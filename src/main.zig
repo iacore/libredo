@@ -1,3 +1,4 @@
+//! Dependency tracking library supporting cyclic dependencies
 test "Table Of Contents" {
     _ = .{
         // Dependency graph as trie, for direct dependency tracking
@@ -13,6 +14,7 @@ test "Table Of Contents" {
 const std = @import("std");
 const FieldType = std.meta.FieldType;
 const assert = std.debug.assert;
+const asBytes = std.mem.asBytes;
 
 /// Special two-way map for dependency tracking
 /// Please use as BijectMap(dependent, dependency)
@@ -31,11 +33,6 @@ pub fn BijectMap(comptime K: type, comptime V: type) type {
         arr: std.ArrayList(Entry),
 
         pub const Entry = std.meta.Tuple(&.{ K, V });
-        pub const EntryBytes = [@sizeOf(Entry)]u8;
-        fn toBytes(x: Entry) EntryBytes {
-            return @as(*const EntryBytes, @ptrCast(&x)).*;
-        }
-
         pub const Iterator = struct {
             value: V,
             slice: []const Entry,
@@ -91,15 +88,15 @@ pub fn BijectMap(comptime K: type, comptime V: type) type {
         }
 
         pub fn _eq(lhs: Entry, rhs: Entry) bool {
-            return std.mem.eql(u8, &toBytes(lhs), &toBytes(rhs));
+            return std.meta.eql(lhs, rhs);
         }
         pub fn _compareFn(_: void, lhs: Entry, rhs: Entry) std.math.Order {
-            return std.mem.order(u8, &toBytes(lhs), &toBytes(rhs));
+            return std.mem.order(u8, asBytes(&lhs), asBytes(&rhs));
         }
         pub fn _lessThanFn(_: void, lhs: Entry, rhs: Entry) bool {
-            return std.mem.lessThan(u8, &toBytes(lhs), &toBytes(rhs));
+            return std.mem.lessThan(u8, asBytes(&lhs), asBytes(&rhs));
         }
-        /// debug only
+        /// print debug info
         pub fn _dumpLog(this: @This()) void {
             for (this.arr.items) |x| {
                 std.log.warn("{} -> {}", x);
@@ -267,6 +264,7 @@ pub fn dependency_module(comptime id_type: type) type {
                 try collector.add(dependency);
             }
 
+            /// print debug info
             pub fn _dumpLog(this: @This()) void {
                 std.log.warn("#dep={} #dirty={}", .{ this.pairs.arr.items.len, this.dirty_set.count() });
                 this.pairs._dumpLog();

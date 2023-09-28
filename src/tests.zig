@@ -225,13 +225,17 @@ fn get2(cx: *Scope, id: u64) !void {
 test "cyclic dependency graph" {
     var cx = try Scope.init(std.testing.allocator);
     defer cx.deinit();
+    try std.testing.expectEqual(@as(u32, 0), cx.dirty_set.count());
     for (1..4) |i| try cx.register(i);
-    try get2(&cx, 3);
-    try get2(&cx, 2);
-    try get2(&cx, 1);
-    cx._dumpLog();
-    try cx.invalidate(1);
-    cx._dumpLog();
+    try std.testing.expectEqual(@as(u32, 3), cx.dirty_set.count());
+    for (1..4) |i| {
+        try get2(&cx, 3);
+        try get2(&cx, 2);
+        try get2(&cx, 1);
+        try std.testing.expectEqual(@as(u32, 0), cx.dirty_set.count());
+        try cx.invalidate(i);
+        try std.testing.expectEqual(@as(u32, 3), cx.dirty_set.count());
+    }
 }
 
 /// benchmark
