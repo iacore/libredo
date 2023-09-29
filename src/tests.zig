@@ -11,27 +11,27 @@ test "type check" {
 const mod = signals.dependency_module(u64);
 const Scope = mod.Tracker;
 
-fn get(cx: *Scope, id: u64) !void {
+/// Benchmarking code adapted from https://github.com/maverick-js/signals/blob/b2084a54968101018c21aa247da127276a0389df/bench/layers.js#L229-L267
+fn get_layers(cx: *Scope, id: u64) !void {
     // std.log.warn("get({})", .{id});
     try cx.used(id);
     if (id >= 4 and (try cx.setDirty(id, false))) {
         try cx.begin(id);
         defer cx.end();
-        const base = id - id % 4 - 4;
         switch (id % 4) {
             0 => {
-                try get(cx, base + 1);
+                try get_layers(cx, id - 3);
             },
             1 => {
-                try get(cx, base + 0);
-                try get(cx, base + 2);
+                try get_layers(cx, id - 3);
+                try get_layers(cx, id - 5);
             },
             2 => {
-                try get(cx, base + 1);
-                try get(cx, base + 3);
+                try get_layers(cx, id - 3);
+                try get_layers(cx, id - 5);
             },
             3 => {
-                try get(cx, base + 2);
+                try get_layers(cx, id - 5);
             },
             else => unreachable,
         }
@@ -73,10 +73,10 @@ fn run(a: std.mem.Allocator, layer_count: usize, comptime check: bool, comptime 
 
     const ns_prepare = timer.lap();
 
-    try get(&cx, base_id + 0);
-    try get(&cx, base_id + 1);
-    try get(&cx, base_id + 2);
-    try get(&cx, base_id + 3);
+    try get_layers(&cx, base_id + 0);
+    try get_layers(&cx, base_id + 1);
+    try get_layers(&cx, base_id + 2);
+    try get_layers(&cx, base_id + 3);
 
     if (check) for (4..layer_count * 4) |i| {
         // cx.pairs.dumpLog();
@@ -85,10 +85,10 @@ fn run(a: std.mem.Allocator, layer_count: usize, comptime check: bool, comptime 
 
     const ns0 = timer.lap();
 
-    try get(&cx, base_id + 0);
-    try get(&cx, base_id + 1);
-    try get(&cx, base_id + 2);
-    try get(&cx, base_id + 3);
+    try get_layers(&cx, base_id + 0);
+    try get_layers(&cx, base_id + 1);
+    try get_layers(&cx, base_id + 2);
+    try get_layers(&cx, base_id + 3);
 
     if (check) for (4..layer_count * 4) |i| {
         // cx.pairs.dumpLog();
@@ -126,17 +126,17 @@ fn run(a: std.mem.Allocator, layer_count: usize, comptime check: bool, comptime 
     const ns2 = timer.lap();
     _ = ns2;
 
-    try get(&cx, base_id + 0);
+    try get_layers(&cx, base_id + 0);
     // std.log.warn("after base_id+0", .{});
     // cx.pairs.dumpLog();
 
-    try get(&cx, base_id + 1);
+    try get_layers(&cx, base_id + 1);
     // std.log.warn("after base_id+1", .{});
     // cx.pairs.dumpLog();
-    try get(&cx, base_id + 2);
+    try get_layers(&cx, base_id + 2);
     // cx.pairs.dumpLog();
     // unreachable;
-    try get(&cx, base_id + 3);
+    try get_layers(&cx, base_id + 3);
 
     if (check) for (4..layer_count * 4) |i| {
         try std.testing.expect(!cx.isDirty(i));
@@ -145,10 +145,10 @@ fn run(a: std.mem.Allocator, layer_count: usize, comptime check: bool, comptime 
     const ns3 = timer.lap();
     _ = ns3;
 
-    try get(&cx, base_id + 0);
-    try get(&cx, base_id + 1);
-    try get(&cx, base_id + 2);
-    try get(&cx, base_id + 3);
+    try get_layers(&cx, base_id + 0);
+    try get_layers(&cx, base_id + 1);
+    try get_layers(&cx, base_id + 2);
+    try get_layers(&cx, base_id + 3);
 
     if (check) for (4..layer_count * 4) |i| {
         try std.testing.expect(!cx.isDirty(i));
@@ -177,7 +177,7 @@ test "verify dependency" {
 
     try std.testing.expectEqualDeep(@as([]const mod.Entry, &.{}), cx.pairs.arr.items);
 
-    for (12..16) |i| try get(&cx, i);
+    for (12..16) |i| try get_layers(&cx, i);
 
     const expected = [_]mod.Entry{
         .{ 4, 1 },
