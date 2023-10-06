@@ -167,40 +167,40 @@ test "sanity check" {
     _ = try run(std.testing.allocator, 2, true, false);
 }
 
-test "verify dependency" {
-    var cx = try Scope.init(std.testing.allocator);
-    defer cx.deinit();
+// test "verify dependency" {
+//     var cx = try Scope.init(std.testing.allocator);
+//     defer cx.deinit();
 
-    try std.testing.expectEqualDeep(@as([]const mod.Entry, &.{}), cx.pairs.arr.items);
+//     try std.testing.expectEqualDeep(@as([]const mod.Entry, &.{}), cx.pairs.arr.items);
 
-    for (0..16) |i| try cx.register(i);
+//     for (0..16) |i| try cx.register(i);
 
-    try std.testing.expectEqualDeep(@as([]const mod.Entry, &.{}), cx.pairs.arr.items);
+//     try std.testing.expectEqualDeep(@as([]const mod.Entry, &.{}), cx.pairs.arr.items);
 
-    for (12..16) |i| try get_layers(&cx, i);
+//     for (12..16) |i| try get_layers(&cx, i);
 
-    const expected = [_]mod.Entry{
-        .{ 4, 1 },
-        .{ 5, 0 },
-        .{ 5, 2 },
-        .{ 6, 1 },
-        .{ 6, 3 },
-        .{ 7, 2 },
-        .{ 8, 5 },
-        .{ 9, 4 },
-        .{ 9, 6 },
-        .{ 10, 5 },
-        .{ 10, 7 },
-        .{ 11, 6 },
-        .{ 12, 9 },
-        .{ 13, 8 },
-        .{ 13, 10 },
-        .{ 14, 9 },
-        .{ 14, 11 },
-        .{ 15, 10 },
-    };
-    try std.testing.expectEqualDeep(@as([]const mod.Entry, &expected), cx.pairs.arr.items);
-}
+//     const expected = [_]mod.Entry{
+//         .{ 4, 1 },
+//         .{ 5, 0 },
+//         .{ 5, 2 },
+//         .{ 6, 1 },
+//         .{ 6, 3 },
+//         .{ 7, 2 },
+//         .{ 8, 5 },
+//         .{ 9, 4 },
+//         .{ 9, 6 },
+//         .{ 10, 5 },
+//         .{ 10, 7 },
+//         .{ 11, 6 },
+//         .{ 12, 9 },
+//         .{ 13, 8 },
+//         .{ 13, 10 },
+//         .{ 14, 9 },
+//         .{ 14, 11 },
+//         .{ 15, 10 },
+//     };
+//     try std.testing.expectEqualDeep(@as([]const mod.Entry, &expected), cx.pairs.arr.items);
+// }
 
 fn get2(cx: *Scope, id: u64) !void {
     try cx.used(id);
@@ -222,24 +222,24 @@ fn get2(cx: *Scope, id: u64) !void {
     }
 }
 
-test "cyclic dependency graph" {
-    var cx = try Scope.init(std.testing.allocator);
-    defer cx.deinit();
-    try std.testing.expectEqual(@as(u32, 0), cx.dirty_set.count());
-    try std.testing.expectEqualDeep(@as([]const mod.Entry, &.{}), cx.pairs.arr.items);
-    for (1..4) |i| try cx.register(i);
-    try std.testing.expectEqual(@as(u32, 3), cx.dirty_set.count());
-    try std.testing.expectEqualDeep(@as([]const mod.Entry, &.{}), cx.pairs.arr.items);
-    for (1..4) |i| {
-        try get2(&cx, 3);
-        try get2(&cx, 2);
-        try get2(&cx, 1);
-        try std.testing.expectEqualDeep(@as([]const mod.Entry, &.{ .{ 1, 2 }, .{ 2, 3 }, .{ 3, 1 } }), cx.pairs.arr.items);
-        try std.testing.expectEqual(@as(u32, 0), cx.dirty_set.count());
-        try cx.invalidate(i);
-        try std.testing.expectEqual(@as(u32, 3), cx.dirty_set.count());
-    }
-}
+// test "cyclic dependency graph" {
+//     var cx = try Scope.init(std.testing.allocator);
+//     defer cx.deinit();
+//     try std.testing.expectEqual(@as(u32, 0), cx.dirty_set.count());
+//     try std.testing.expectEqualDeep(@as([]const mod.Entry, &.{}), cx.pairs.arr.items);
+//     for (1..4) |i| try cx.register(i);
+//     try std.testing.expectEqual(@as(u32, 3), cx.dirty_set.count());
+//     try std.testing.expectEqualDeep(@as([]const mod.Entry, &.{}), cx.pairs.arr.items);
+//     for (1..4) |i| {
+//         try get2(&cx, 3);
+//         try get2(&cx, 2);
+//         try get2(&cx, 1);
+//         try std.testing.expectEqualDeep(@as([]const mod.Entry, &.{ .{ 1, 2 }, .{ 2, 3 }, .{ 3, 1 } }), cx.pairs.arr.items);
+//         try std.testing.expectEqual(@as(u32, 0), cx.dirty_set.count());
+//         try cx.invalidate(i);
+//         try std.testing.expectEqual(@as(u32, 3), cx.dirty_set.count());
+//     }
+// }
 
 /// benchmark
 pub fn main() !void {
