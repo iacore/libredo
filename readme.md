@@ -24,3 +24,5 @@ The current `BijectMap` is fast enough already.
 - cache lookup, so `BijectMap.add` can be used later faster
 - coz: tested. not useful.
 - ReleaseFast: same speed as ReleaseSafe.
+- hashmap of hashset: see branch `algo-hashmap`. too slow
+- splay tree: see branch `algo-splaytree`. way too slow
