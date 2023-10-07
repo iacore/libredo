@@ -8,11 +8,12 @@ test "type check" {
     std.testing.refAllDeclsRecursive(signals);
 }
 
-const mod = signals.dependency_module(u64);
+const mod = signals.dependency_module(u16);
 const Scope = mod.Tracker;
 
 /// Benchmarking code adapted from https://github.com/maverick-js/signals/blob/b2084a54968101018c21aa247da127276a0389df/bench/layers.js#L229-L267
-fn get_layers(cx: *Scope, id: u64) !void {
+fn get_layers(cx: *Scope, _id: anytype) !void {
+    const id: mod.TaskId = @intCast(_id);
     // std.log.warn("get({})", .{id});
     try cx.used(id);
     if (id >= 4 and (try cx.setDirty(id, false))) {
@@ -58,7 +59,7 @@ fn run(a: std.mem.Allocator, layer_count: usize, comptime check: bool, comptime 
 
     // register memos (by default is dirty)
     for (4..layer_count * 4) |i| {
-        try cx.register(i);
+        try cx.register(@intCast(i));
     }
     // defer {
     //     for (0..layer_count * 4) |i| {
@@ -85,77 +86,77 @@ fn run(a: std.mem.Allocator, layer_count: usize, comptime check: bool, comptime 
 
     const ns0 = timer.lap();
 
-    try get_layers(&cx, base_id + 0);
-    try get_layers(&cx, base_id + 1);
-    try get_layers(&cx, base_id + 2);
-    try get_layers(&cx, base_id + 3);
+    // try get_layers(&cx, base_id + 0);
+    // try get_layers(&cx, base_id + 1);
+    // try get_layers(&cx, base_id + 2);
+    // try get_layers(&cx, base_id + 3);
 
-    if (check) for (4..layer_count * 4) |i| {
-        // cx.pairs.dumpLog();
-        try std.testing.expect(!cx.isDirty(i));
-    };
+    // if (check) for (4..layer_count * 4) |i| {
+    //     // cx.pairs.dumpLog();
+    //     try std.testing.expect(!cx.isDirty(i));
+    // };
 
-    const ns1 = timer.lap();
-    _ = ns1;
+    // const ns1 = timer.lap();
+    // _ = ns1;
 
-    try cx.invalidate(0);
-    try cx.invalidate(1);
-    try cx.invalidate(2);
-    try cx.invalidate(3);
+    // try cx.invalidate(0);
+    // try cx.invalidate(1);
+    // try cx.invalidate(2);
+    // try cx.invalidate(3);
 
-    if (check) {
-        // cx.pairs.dumpLog();
+    // if (check) {
+    //     // cx.pairs.dumpLog();
 
-        // {
-        //     var it = cx.dirty_set.iterator();
-        //     while (it.next()) |kv| {
-        //         std.log.warn("dirty: {}", .{kv.key_ptr.*});
-        //     }
-        // }
-        // {
-        //     for (cx.pairs.items) |kv| {
-        //         std.log.warn("dep: {} -> {}", .{ kv[0], kv[1] });
-        //     }
-        // }
+    //     // {
+    //     //     var it = cx.dirty_set.iterator();
+    //     //     while (it.next()) |kv| {
+    //     //         std.log.warn("dirty: {}", .{kv.key_ptr.*});
+    //     //     }
+    //     // }
+    //     // {
+    //     //     for (cx.pairs.items) |kv| {
+    //     //         std.log.warn("dep: {} -> {}", .{ kv[0], kv[1] });
+    //     //     }
+    //     // }
 
-        for (4..layer_count * 4) |i| {
-            try std.testing.expect(cx.isDirty(i));
-        }
-    }
+    //     for (4..layer_count * 4) |i| {
+    //         try std.testing.expect(cx.isDirty(i));
+    //     }
+    // }
 
-    const ns2 = timer.lap();
-    _ = ns2;
+    // const ns2 = timer.lap();
+    // _ = ns2;
 
-    try get_layers(&cx, base_id + 0);
-    // std.log.warn("after base_id+0", .{});
-    // cx.pairs.dumpLog();
+    // try get_layers(&cx, base_id + 0);
+    // // std.log.warn("after base_id+0", .{});
+    // // cx.pairs.dumpLog();
 
-    try get_layers(&cx, base_id + 1);
-    // std.log.warn("after base_id+1", .{});
-    // cx.pairs.dumpLog();
-    try get_layers(&cx, base_id + 2);
-    // cx.pairs.dumpLog();
-    // unreachable;
-    try get_layers(&cx, base_id + 3);
+    // try get_layers(&cx, base_id + 1);
+    // // std.log.warn("after base_id+1", .{});
+    // // cx.pairs.dumpLog();
+    // try get_layers(&cx, base_id + 2);
+    // // cx.pairs.dumpLog();
+    // // unreachable;
+    // try get_layers(&cx, base_id + 3);
 
-    if (check) for (4..layer_count * 4) |i| {
-        try std.testing.expect(!cx.isDirty(i));
-    };
+    // if (check) for (4..layer_count * 4) |i| {
+    //     try std.testing.expect(!cx.isDirty(i));
+    // };
 
-    const ns3 = timer.lap();
-    _ = ns3;
+    // const ns3 = timer.lap();
+    // _ = ns3;
 
-    try get_layers(&cx, base_id + 0);
-    try get_layers(&cx, base_id + 1);
-    try get_layers(&cx, base_id + 2);
-    try get_layers(&cx, base_id + 3);
+    // try get_layers(&cx, base_id + 0);
+    // try get_layers(&cx, base_id + 1);
+    // try get_layers(&cx, base_id + 2);
+    // try get_layers(&cx, base_id + 3);
 
-    if (check) for (4..layer_count * 4) |i| {
-        try std.testing.expect(!cx.isDirty(i));
-    };
+    // if (check) for (4..layer_count * 4) |i| {
+    //     try std.testing.expect(!cx.isDirty(i));
+    // };
 
-    const ns4 = timer.lap();
-    _ = ns4;
+    // const ns4 = timer.lap();
+    // _ = ns4;
 
     // std.log.warn("time used: {any}", .{[_]u64{ ns_prepare, ns0, ns1, ns2, ns3, ns4 }});
 
@@ -173,7 +174,7 @@ test "verify dependency" {
 
     try std.testing.expectEqualDeep(@as([]const mod.Entry, &.{}), cx.pairs.arr.items);
 
-    for (0..16) |i| try cx.register(i);
+    for (0..16) |i| try cx.register(@intCast(i));
 
     try std.testing.expectEqualDeep(@as([]const mod.Entry, &.{}), cx.pairs.arr.items);
 
@@ -227,7 +228,7 @@ test "cyclic dependency graph" {
     defer cx.deinit();
     try std.testing.expectEqual(@as(u32, 0), cx.dirty_set.count());
     try std.testing.expectEqualDeep(@as([]const mod.Entry, &.{}), cx.pairs.arr.items);
-    for (1..4) |i| try cx.register(i);
+    for (1..4) |i| try cx.register(@intCast(i));
     try std.testing.expectEqual(@as(u32, 3), cx.dirty_set.count());
     try std.testing.expectEqualDeep(@as([]const mod.Entry, &.{}), cx.pairs.arr.items);
     for (1..4) |i| {

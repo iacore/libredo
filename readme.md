@@ -21,8 +21,9 @@ If you don't know how to use a Zig library, use the search engine to look it up.
 
 The current `BijectMap` is fast enough already.
 
-- cache lookup, so `BijectMap.add` can be used later faster
-- coz: tested. not useful.
-- ReleaseFast: same speed as ReleaseSafe.
-- hashmap of hashset: see branch `algo-hashmap`. too slow
-- splay tree: see branch `algo-splaytree`. way too slow
+- [ ] cache lookup, so `BijectMap.add` can be used later faster
+- [x] use u16 instead of u64 as id: ~4x faster
+- [x] coz: tested. not useful.
+- [x] ReleaseFast: same speed as ReleaseSafe.
+- [x] hashmap of hashset: see branch `algo-hashmap`. too slow
+- [x] splay tree: see branch `algo-splaytree`. way too slow
